@@ -1,15 +1,34 @@
 {
     "$schema": "https://getcomposer.org/schema.json",
-    "name": "laravel/laravel",
+    "name": "touhidurabir/tenancey",
     "type": "project",
-    "description": "The skeleton application for the Laravel framework.",
+    "description": "Multi-tenant, multi-database Laravel boilerplate built on stancl/tenancy v3: subdomain tenants, queued provisioning, Horizon, audit log and impersonation.",
     "keywords": [
         "laravel",
-        "framework"
+        "multi-tenancy",
+        "multi-tenant",
+        "multi-database",
+        "saas",
+        "boilerplate",
+        "stancl-tenancy",
+        "horizon"
     ],
     "license": "MIT",
+    "homepage": "https://github.com/touhidurabir/tenancey",
+    "authors": [
+        {
+            "name": "Touhidur Rahman",
+            "homepage": "https://github.com/touhidurabir"
+        }
+    ],
+    "support": {
+        "issues": "https://github.com/touhidurabir/tenancey/issues",
+        "source": "https://github.com/touhidurabir/tenancey"
+    },
     "require": {
         "php": "^8.3",
+        "ext-pdo_mysql": "*",
+        "ext-redis": "*",
         "laravel/framework": "^13.17",
         "laravel/horizon": "^5.50",
         "laravel/tinker": "^3.0",
@@ -45,6 +64,7 @@
             "@php -r \"file_exists('.env') || copy('.env.example', '.env');\"",
             "@php artisan key:generate",
             "@php artisan migrate --force",
+            "@php artisan db:seed --force",
             "npm install --ignore-scripts",
             "npm run build"
         ],
@@ -67,9 +87,7 @@
             "@php -r \"file_exists('.env') || copy('.env.example', '.env');\""
         ],
         "post-create-project-cmd": [
-            "@php artisan key:generate --ansi",
-            "@php -r \"file_exists('database/database.sqlite') || touch('database/database.sqlite');\"",
-            "@php artisan migrate --graceful --ansi"
+            "@php artisan key:generate --ansi"
         ],
         "pre-package-uninstall": [
             "Illuminate\\Foundation\\ComposerScripts::prePackageUninstall"

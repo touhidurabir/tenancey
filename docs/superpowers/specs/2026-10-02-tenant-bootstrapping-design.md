@@ -47,7 +47,7 @@ its own MySQL user, its own storage folder and its own cache prefix, provisioned
 single-purpose jobs managed by Horizon. When provisioning finishes, the tenant's first user receives
 their credentials by email and can sign in at `http://{subdomain}.tenancey.test/login`.
 
-Package: `stancl/tenancy` v3 (multi-database). Reference: plandental (patterns), cpcsl-cms (safety).
+Package: `stancl/tenancy` v3 (multi-database).
 
 Out of scope: React, billing/plans, impersonation, tenant self-signup, forgot-password, email
 verification, pre-delete backups, resource syncing.
@@ -65,7 +65,7 @@ verification, pre-delete backups, resource syncing.
 | `id` | string PK = subdomain, immutable |
 | `name` | editable |
 | `status` | `provisioning` / `active` / `disabled` / `failed` / `deleting` |
-| `db_name` | `tenancey_tenant_{id}` (project prefix — the MySQL server is shared with cpcsl-cms) |
+| `db_name` | `tenancey_tenant_{id}` (project prefix — the MySQL server may be shared with other projects) |
 | `db_username` | `tt_{id}`, a per-tenant MySQL user (MySQL user names ≤ 32 chars) |
 | `db_password` | random, `encrypted` cast |
 | `storage_path` | `storage/tenant{id}` (stancl FilesystemTenancyBootstrapper) |

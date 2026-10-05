@@ -17,7 +17,7 @@ class HorizonServiceProvider extends HorizonApplicationServiceProvider
         parent::boot();
 
         // The default auth callback checks the default (`web`, tenant) guard. Horizon belongs to
-        // the central admins, so check the `central` guard instead (plandental hit this bug).
+        // the central admins, so check the `central` guard instead.
         Horizon::auth(fn ($request) => app()->environment('local')
             || Gate::forUser($request->user('central'))->check('viewHorizon'));
 

@@ -44,8 +44,8 @@ class Tenant extends BaseTenant implements TenantWithDatabase
     use SoftDeletes;
 
     /**
-     * Soft deleting must not fire stancl's TenantDeleted (cpcsl-cms lesson: wired to a delete
-     * pipeline it would drop the database). Only a real force delete counts as "deleted".
+     * Soft deleting must not fire stancl's TenantDeleted (wired to a delete pipeline it would
+     * drop the database). Only a real force delete counts as "deleted".
      *
      * @var array<string, class-string>
      */

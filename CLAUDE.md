@@ -16,13 +16,6 @@ Phases:
    Design: `docs/superpowers/specs/2026-10-02-tenant-bootstrapping-design.md`.
 3. React + TypeScript frontend.
 
-### Reference apps (production, stancl/tenancy v3)
-
-Read these for patterns, but treat them as read-only and never edit them:
-- `/Users/abir/Sites/code/cpcsl-cms`: Laravel 12, served at http://cpcsl-cms.test/. Its `CLAUDE.md` and
-  `docs/claude/` record hard-won tenancy lessons (tenant migrations, backfills, test suites).
-- `/Users/abir/Sites/code/plandental`: Laravel 10.
-
 ### Reference docs (this repo)
 
 Read the matching doc before changing routes, middleware, queue config or Horizon:
@@ -35,9 +28,9 @@ Read the matching doc before changing routes, middleware, queue config or Horizo
 
 - Served by Valet at **http://tenancey.test/** (`APP_URL`). Don't use `php artisan serve` for browsing.
 - MySQL `127.0.0.1:3306`, user `root`, empty password. The central (landlord) DB is **`tenancey`**.
-- **The MySQL server is shared with other projects.** cpcsl-cms already owns databases named
-  `tenant_<uuid>`. This project's tenant databases are `tenancey_{uuid}` (`TENANT_DATABASE_PREFIX`).
-  Never drop databases or users by pattern.
+- **The MySQL server may be shared with other projects**, which can own similarly named databases
+  (e.g. `tenant_<uuid>`). This project's tenant databases are `tenancey_{uuid}`
+  (`TENANT_DATABASE_PREFIX`). Never drop databases or users by pattern.
 - Redis (local, phpredis) holds queues, cache and sessions. Mail goes over SMTP to HELO on port 2525.
 - Central admin login: `admin@tenancey.test` / `password` (from `DatabaseSeeder`).
 - Horizon runs under supervisor: `deploy/supervisor/` (README there).
@@ -102,7 +95,7 @@ Read the matching doc before changing routes, middleware, queue config or Horizo
 - **Roles.** spatie/laravel-permission tables live in each tenant DB.
   - `TenantDatabaseSeeder` creates `admin` and `member`; the first user gets `admin`.
   - `App\Tenancy\SpatiePermissionsBootstrapper` gives each tenant its own permission cache key and
-    clears the registrar's in-memory collection on every switch (cpcsl-cms pattern).
+    clears the registrar's in-memory collection on every switch.
   - The seeder runs once per tenant: new roles or permissions for existing tenants need a backfill
     tenant migration.
 - **Queues.** All queues are on the unprefixed Redis `queue` connection.
@@ -141,7 +134,7 @@ Read the matching doc before changing routes, middleware, queue config or Horizo
   all tenants.
 - **Tenant migrations** live in `database/migrations/tenant`. Changing an already-run migration
   never reaches existing tenants: add a new file.
-- **`CentralUser` vs `User` is deliberate** (plandental pattern). Don't use the `web` guard on
+- **`CentralUser` vs `User` is deliberate**. Don't use the `web` guard on
   central routes: with no tenant initialized, `App\Models\User` would read the landlord `users` table.
 - **Resetting the landlord DB.** Delete tenants through the UI first, so their databases, storage
   and keys go with them. `migrate:fresh` alone orphans every tenant's resources.

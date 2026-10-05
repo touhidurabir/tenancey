@@ -7,7 +7,7 @@ use Stancl\Tenancy\Contracts\TenancyBootstrapper;
 use Stancl\Tenancy\Contracts\Tenant;
 
 /**
- * Keeps spatie/laravel-permission per tenant (pattern from cpcsl-cms).
+ * Keeps spatie/laravel-permission per tenant.
  *
  * The registrar is a singleton that also memoizes the permission collection in process memory,
  * so in a long-lived worker the first tenant's roles/permissions would answer for every later
