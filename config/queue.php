@@ -64,13 +64,39 @@ return [
             'after_commit' => false,
         ],
 
+        // Tenant-aware: a job dispatched inside a tenant carries its id and runs in that tenant.
+        // Every retry_after below must stay ABOVE its Horizon supervisor's timeout, or Redis hands a
+        // still-running job to a second worker.
         'redis' => [
             'driver' => 'redis',
-            'connection' => env('REDIS_QUEUE_CONNECTION', 'default'),
+            'connection' => env('REDIS_QUEUE_CONNECTION', 'queue'),
             'queue' => env('REDIS_QUEUE', 'default'),
-            'retry_after' => (int) env('REDIS_QUEUE_RETRY_AFTER', 90),
+            'retry_after' => (int) env('REDIS_QUEUE_RETRY_AFTER', 150),
             'block_for' => null,
             'after_commit' => false,
+        ],
+
+        // `central => true` is read by stancl's QueueTenancyBootstrapper: jobs on this connection never
+        // carry a tenant id, so they always run against the landlord database.
+        'central' => [
+            'driver' => 'redis',
+            'connection' => 'queue',
+            'queue' => 'central',
+            'retry_after' => 360,
+            'block_for' => null,
+            'after_commit' => false,
+            'central' => true,
+        ],
+
+        // The tenant provisioning and teardown chains (App\Jobs\Provisioning, App\Jobs\Teardown).
+        'provisioning' => [
+            'driver' => 'redis',
+            'connection' => 'queue',
+            'queue' => 'provisioning',
+            'retry_after' => 900,
+            'block_for' => null,
+            'after_commit' => false,
+            'central' => true,
         ],
 
         'deferred' => [

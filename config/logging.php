@@ -65,6 +65,18 @@ return [
             'replace_placeholders' => true,
         ],
 
+        // Tenant provisioning, teardown and audit trail. Every entry carries the Laravel Context
+        // (tenant_uuid, tenancy_run, tenancy_step...), so search a tenant's uuid in /log-viewer.
+        // The path is fixed here at boot, so it stays in storage/logs even while a tenant's
+        // storage_path() is active.
+        'tenancy' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/tenancy.log'),
+            'level' => env('LOG_LEVEL', 'debug'),
+            'max_files' => env('LOG_TENANCY_DAYS', 90),
+            'replace_placeholders' => true,
+        ],
+
         'daily' => [
             'driver' => 'daily',
             'path' => storage_path('logs/laravel.log'),

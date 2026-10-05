@@ -12,7 +12,10 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        //
+        // Guests and signed-in users are redirected within their own world: tenant routes run
+        // with tenancy initialized, central routes without.
+        $middleware->redirectGuestsTo(fn () => tenancy()->initialized ? route('login') : route('central.login'));
+        $middleware->redirectUsersTo(fn () => tenancy()->initialized ? route('dashboard') : route('central.tenants.index'));
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

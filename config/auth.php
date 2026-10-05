@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\CentralUser;
 use App\Models\User;
 
 return [
@@ -38,9 +39,16 @@ return [
     */
 
     'guards' => [
+        // Tenant users, in the current tenant's database.
         'web' => [
             'driver' => 'session',
             'provider' => 'users',
+        ],
+
+        // Central (landlord) admins, always in the landlord database.
+        'central' => [
+            'driver' => 'session',
+            'provider' => 'central_users',
         ],
     ],
 
@@ -65,6 +73,11 @@ return [
         'users' => [
             'driver' => 'eloquent',
             'model' => env('AUTH_MODEL', User::class),
+        ],
+
+        'central_users' => [
+            'driver' => 'eloquent',
+            'model' => CentralUser::class,
         ],
 
         // 'users' => [

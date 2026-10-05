@@ -2,10 +2,13 @@
 
 namespace Database\Seeders;
 
-use App\Models\User;
+use App\Models\CentralUser;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 
+/**
+ * Seeds the landlord (central) database. Tenant databases use TenantDatabaseSeeder.
+ */
 class DatabaseSeeder extends Seeder
 {
     use WithoutModelEvents;
@@ -15,11 +18,9 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        // User::factory(10)->create();
-
-        User::factory()->create([
-            'name' => 'Test User',
-            'email' => 'test@example.com',
-        ]);
+        CentralUser::query()->firstOrCreate(
+            ['email' => 'admin@tenancey.test'],
+            ['name' => 'Central Admin', 'password' => 'password', 'email_verified_at' => now()],
+        );
     }
 }
