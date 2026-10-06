@@ -8,7 +8,7 @@ hosts, see [ROUTING.md](ROUTING.md).
 
 | Piece | What it is | Where |
 |---|---|---|
-| **Reverb** | A WebSocket server. It holds the browsers' open connections and forwards messages to them | `php artisan reverb:start` (port 8081 locally) |
+| **Reverb** | A WebSocket server. It holds the browsers' open connections and forwards messages to them | Supervisor program `tenancey-reverb` (`deploy/supervisor/`), port 8081 locally |
 | **Broadcaster** | Laravel's side: sends events to Reverb over HTTP | `BROADCAST_CONNECTION=reverb`, `config/broadcasting.php` |
 | **Echo** | The browser's side: opens the WebSocket and subscribes to channels | `resources/js/echo.js` (laravel-echo + pusher-js) |
 | **Channel** | A named stream. Private channels (`private-…`) need Laravel's permission to join | `routes/channels.php` |
@@ -172,7 +172,8 @@ protocol:
 POST http://localhost:8081/apps/{REVERB_APP_ID}/events      (REVERB_HOST / REVERB_PORT)
   { name: "progress.updated", channels: [...both...], data: {...} }   signed with the key and secret
 ```
-You can watch this arrive in a `reverb:start --debug` terminal.
+To watch it arrive, stop the supervised Reverb (`supervisorctl stop tenancey-reverb`) and run
+`php artisan reverb:start --debug` in a terminal; start the supervised one again afterwards.
 
 **B9. Reverb forwards the message.** For each channel listed, it finds the sockets subscribed
 to it:
@@ -328,9 +329,12 @@ Steps 1–3 happen once per page and channel. Steps 4–7 happen on every releva
   list in `Tenant::booted()`.
 - **After changing event or model code**, run `php artisan horizon:terminate`: the Horizon
   workers send most of these events and keep the old code until they restart.
+- **After changing `REVERB_*` settings**, run `php artisan reverb:restart`; supervisor starts it
+  again on the new settings.
 - **After changing `VITE_REVERB_*` or the JS**, rebuild the assets (`npm run dev`).
 - **Nothing updating?** The status line on the tenant page shows the WebSocket state:
-  - `unavailable`: Reverb is not running (`php artisan reverb:start`).
+  - `unavailable`: Reverb is not running (`supervisorctl status tenancey-reverb`; its output is in
+    `storage/logs/supervisor-tenancey-reverb.log`).
   - `not authorized for this channel`: `/broadcasting/auth` returned 403. Are you signed in as
     a central admin?
   - Connected but no events: check Horizon (`supervisorctl status tenancey-horizon`), and
@@ -344,6 +348,7 @@ Steps 1–3 happen once per page and channel. Steps 4–7 happen on every releva
 | What | Where |
 |---|---|
 | Reverb server and app keys | `.env` `REVERB_*`, `config/reverb.php` |
+| Reverb process | `deploy/supervisor/tenancey-reverb.conf` (production), `deploy/supervisor/local/tenancey.ini` (local) |
 | Broadcaster (where Laravel sends) | `.env` `BROADCAST_CONNECTION`, `config/broadcasting.php` |
 | `/broadcasting/auth` route | `bootstrap/app.php` → `withRouting(channels: …)` |
 | Who may join which channel | `routes/channels.php` |

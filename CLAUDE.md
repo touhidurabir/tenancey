@@ -36,7 +36,7 @@ Read the matching doc before changing routes, middleware, queue config, Horizon 
   (`TENANT_DATABASE_PREFIX`). Never drop databases or users by pattern.
 - Redis (local, phpredis) holds queues, cache and sessions. Mail goes over SMTP to HELO on port 2525.
 - Central admin login: `admin@tenancey.test` / `password` (from `DatabaseSeeder`).
-- Horizon runs under supervisor: `deploy/supervisor/` (README there).
+- Horizon and Reverb (WebSockets, port 8081) run under supervisor: `deploy/supervisor/` (README there).
 
 ## Multi-tenancy (stancl/tenancy v3, one database per tenant)
 
@@ -160,6 +160,8 @@ Read the matching doc before changing routes, middleware, queue config, Horizon 
 ```bash
 supervisorctl status tenancey-horizon  # Horizon is REQUIRED for provisioning; dashboard: /horizon
 php artisan horizon:terminate  # after changing job code (supervisor restarts it on new code)
+supervisorctl status tenancey-reverb  # Reverb, for live progress pages (docs/BROADCASTING.md)
+php artisan reverb:restart     # after changing REVERB_* settings or Reverb-related code
 # logs: http://tenancey.test/log-viewer (central admin)   audit: http://tenancey.test/audit
 php artisan migrate            # central DB migrations
 php artisan tenants:migrate    # tenant DB migrations, every tenant
