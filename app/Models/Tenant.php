@@ -4,6 +4,8 @@ namespace App\Models;
 
 use App\Casts\TenantSecret;
 use App\Enums\TenantState;
+use App\Events\TenantProvisioningUpdated;
+use App\Events\TenantTeardownUpdated;
 use App\Tenancy\TenantDatabaseConfig;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
@@ -64,6 +66,17 @@ class Tenant extends BaseTenant implements TenantWithDatabase
     {
         static::creating(function (Tenant $tenant) {
             $tenant->uuid ??= (string) Str::uuid7();
+        });
+
+        // Every save that moves a chain on (a step starts, the state changes, a step fails)
+        // tells the browser. markStep(), MarkTenantReady, recordFailure() etc. all end up here,
+        // and so does the very first save, so the /tenants list shows a new tenant at once.
+        static::created(fn (Tenant $tenant) => $tenant->broadcastProgress());
+
+        static::updated(function (Tenant $tenant) {
+            if ($tenant->wasChanged(['state', 'current_step', 'last_error'])) {
+                $tenant->broadcastProgress();
+            }
         });
     }
 
@@ -196,5 +209,26 @@ class Tenant extends BaseTenant implements TenantWithDatabase
     public function markStep(string $step): void
     {
         $this->forceFill(['current_step' => $step])->save();
+    }
+
+    /**
+     * Push the current progress to the admin's tenant page over Reverb: teardown states go to
+     * the teardown channel, everything else to the provisioning channel.
+     *
+     * A broadcast failure (e.g. Reverb not running) is reported but never fails the step: the
+     * live view is a convenience, the chain is the real work.
+     *
+     * afterCommit(): TenantProvisioner creates the row inside a transaction, so the "new tenant"
+     * event waits for the commit. Otherwise the list could link to a row that does not exist yet.
+     * Outside a transaction it runs at once.
+     */
+    public function broadcastProgress(): void
+    {
+        $event = in_array($this->state, [TenantState::Deleting, TenantState::Deleted], true)
+            ? new TenantTeardownUpdated($this)
+            : new TenantProvisioningUpdated($this);
+
+        // event(), not broadcast(): broadcast() sends when its return value is destructed, outside rescue().
+        $this->getConnection()->afterCommit(fn () => rescue(fn () => event($event)));
     }
 }

@@ -98,7 +98,6 @@ class TenantManagementTest extends TestCase
 
     public function test_deleting_requires_typing_the_subdomain(): void
     {
-        Bus::fake();
         $tenant = Tenant::query()->create([
             'name' => 'Acme Ltd',
             'subdomain' => 'acme',
@@ -107,6 +106,7 @@ class TenantManagementTest extends TestCase
             'storage_path' => 'storage/testtenant_x',
             'cache_prefix' => 'tenanceytest_x:',
         ]);
+        Bus::fake(); // after the create, whose "new tenant" broadcast is not what this test is about
         $this->actingAs(CentralUser::factory()->create(), 'central');
         $url = $this->centralUrl('/tenants/'.$tenant->uuid);
 
