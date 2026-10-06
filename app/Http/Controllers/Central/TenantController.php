@@ -19,11 +19,8 @@ class TenantController extends Controller
     public function index(): View
     {
         // Deleted tenants are listed too: their soft-deleted rows are the record.
-        $tenants = Tenant::withTrashed()->orderByDesc('id')->get();
-
         return view('central.tenants.index', [
-            'tenants' => $tenants,
-            'inProgress' => $tenants->contains(fn (Tenant $tenant) => $tenant->state->isInProgress()),
+            'tenants' => Tenant::withTrashed()->orderByDesc('id')->get(),
         ]);
     }
 

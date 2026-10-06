@@ -31,6 +31,7 @@
         "ext-redis": "*",
         "laravel/framework": "^13.17",
         "laravel/horizon": "^5.50",
+        "laravel/reverb": "^1.0",
         "laravel/tinker": "^3.0",
         "opcodesio/log-viewer": "^3.24",
         "spatie/laravel-permission": "^8.3",

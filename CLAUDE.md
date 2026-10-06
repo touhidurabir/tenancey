@@ -18,11 +18,14 @@ Phases:
 
 ### Reference docs (this repo)
 
-Read the matching doc before changing routes, middleware, queue config or Horizon:
+Read the matching doc before changing routes, middleware, queue config, Horizon or broadcasting:
 - `docs/ROUTING.md`: central vs tenant routing, from host name to tenant. Covers the subdomain
   resolver, the middleware chain, the bootstrappers, sessions, and where each piece lives.
 - `docs/QUEUES.md`: driver vs queue connection vs queue, the Redis connections, Horizon
   supervisors vs workers, and the timing rules.
+- `docs/BROADCASTING.md`: live provisioning/teardown over Reverb. Covers the channels, channel
+  auth with the `central` guard, the path from a tenant save to the browser, and why the events
+  use `ShouldBroadcastNow`.
 
 ## Environment
 

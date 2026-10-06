@@ -5,8 +5,9 @@
     $labels = array_map(fn (string $job) => $job::label(), $steps);
     $currentIndex = $tenant->current_step ? array_search($tenant->current_step, $labels, true) : false;
     $finished = in_array($tenant->state, [TenantState::Ready, TenantState::Deleted], true);
+    $tearingDown = in_array($tenant->state, [TenantState::Deleting, TenantState::Deleted], true);
 @endphp
-<x-layouts.central :title="$tenant->name" :refresh="$inProgress ? 2 : null">
+<x-layouts.central :title="$tenant->name">
     <div class="mb-6 flex items-start justify-between gap-6">
         <div>
             <h1 class="text-2xl font-semibold">{{ $tenant->name }}</h1>
@@ -17,7 +18,7 @@
             @endif
         </div>
         <div class="text-right">
-            <span class="rounded-full px-3 py-1 text-sm font-medium {{ $tenant->state->badgeClasses() }}">{{ $tenant->state->label() }}</span>
+            <span data-progress-badge class="rounded-full px-3 py-1 text-sm font-medium {{ $tenant->state->badgeClasses() }}">{{ $tenant->state->label() }}</span>
             @unless ($tenant->enabled)
                 <span class="ml-1 rounded-full bg-gray-200 px-3 py-1 text-sm font-medium text-gray-700">Disabled</span>
             @endunless
@@ -33,8 +34,12 @@
     @endif
 
     <div class="grid gap-6 md:grid-cols-2">
-        <section class="rounded-lg border border-gray-200 bg-white p-6">
-            <h2 class="mb-4 font-medium">{{ in_array($tenant->state, [TenantState::Deleting, TenantState::Deleted], true) ? 'Teardown' : 'Provisioning' }}</h2>
+        {{-- resources/js/tenant-progress.js subscribes to the matching private channel and redraws this list. --}}
+        <section class="rounded-lg border border-gray-200 bg-white p-6"
+                 data-tenant-progress
+                 data-uuid="{{ $tenant->uuid }}"
+                 data-channel="{{ $tearingDown ? 'teardown' : 'provisioning' }}">
+            <h2 class="mb-4 font-medium">{{ $tearingDown ? 'Teardown' : 'Provisioning' }}</h2>
             <ol class="space-y-2 text-sm">
                 @foreach ($labels as $index => $label)
                     @php
@@ -46,9 +51,9 @@
                             default => 'waiting',
                         };
                     @endphp
-                    <li class="flex items-center gap-2">
-                        <span class="w-5 text-center">{{ ['done' => '✓', 'running' => '…', 'failed' => '✗', 'waiting' => '·'][$state] }}</span>
-                        <span @class([
+                    <li class="flex items-center gap-2" data-step="{{ $label }}">
+                        <span class="w-5 text-center" data-step-icon>{{ ['done' => '✓', 'running' => '…', 'failed' => '✗', 'waiting' => '·'][$state] }}</span>
+                        <span data-step-label @class([
                             'text-gray-900' => $state === 'done',
                             'font-medium text-blue-700' => $state === 'running',
                             'font-medium text-red-700' => $state === 'failed',
@@ -57,9 +62,12 @@
                     </li>
                 @endforeach
             </ol>
-            @if ($inProgress)
-                <p class="mt-4 text-xs text-gray-500">This page refreshes every 2 seconds. Nothing moving? Horizon is not running (<code>supervisorctl status tenancey-horizon</code>).</p>
-            @endif
+            <p class="mt-4 text-xs text-gray-500">
+                Live updates: <span data-progress-connection>connecting…</span>
+                @if ($inProgress)
+                    · Nothing moving? Check Horizon (<code>supervisorctl status tenancey-horizon</code>) and Reverb (<code>php artisan reverb:start</code>).
+                @endif
+            </p>
         </section>
 
         <section class="rounded-lg border border-gray-200 bg-white p-6">
