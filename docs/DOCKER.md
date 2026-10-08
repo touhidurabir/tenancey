@@ -60,3 +60,22 @@ docker build -t tenancey-php:dev docker/php     # Compose builds it for you once
 docker run --rm -v "$PWD":/var/www/html tenancey-php:dev composer check-platform-reqs
 ```
 Rebuild after changing anything in `docker/php/`.
+
+## MySQL and Redis
+
+| Service | Inside Docker | From the Mac | Data |
+|---|---|---|---|
+| `mysql` (8.4) | `mysql:3306` | `127.0.0.1:3307`, `root` / `docker` | volume `tenancey_mysql-data` |
+| `redis` (7.4) | `redis:6379` | not published | volume `tenancey_redis-data` |
+
+- On its first start (an empty volume), MySQL runs `docker/mysql/init/*.sql`, which creates
+  `tenancey` and `tenancey_testing`.
+- Containers reach each other by **service name** on the `tenancey_default` network. Inside a
+  container, `127.0.0.1` is the container itself.
+- `docker compose down` keeps the data. `docker compose down -v` deletes Docker's MySQL and Redis
+  data (every Docker tenant); delete tenants in the UI first, as with `migrate:fresh` on Valet.
+
+```bash
+docker compose exec mysql mysql -uroot -pdocker -e 'SHOW DATABASES'
+docker compose exec redis redis-cli ping
+```
