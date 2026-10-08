@@ -11,6 +11,7 @@ use Illuminate\Auth\Events\Logout;
 use Illuminate\Foundation\DevCommands;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Vite;
 use Illuminate\Support\ServiceProvider;
 use Opcodes\LogViewer\Facades\LogViewer;
 
@@ -32,8 +33,22 @@ class AppServiceProvider extends ServiceProvider
         // `npm run dev` is a one-shot build here, so `composer dev` runs the HMR server instead.
         DevCommands::node('hot', 'vite');
 
+        $this->configureAssetBuildDirectory();
         $this->auditCentralSignIns();
         $this->configureLogViewer();
+    }
+
+    /**
+     * Point Laravel's Vite helper at the same build directory and hot file that vite.config.js
+     * uses for ASSET_BUILD_DIRECTORY. Unset or empty (Valet) means public/build and public/hot.
+     * Always sets both, so it also resets them. Public so the test can re-run it.
+     */
+    public function configureAssetBuildDirectory(): void
+    {
+        $directory = config('app.asset_build_directory') ?: 'build';
+
+        Vite::useBuildDirectory($directory);
+        Vite::useHotFile(public_path($directory === 'build' ? 'hot' : $directory.'.hot'));
     }
 
     /**
