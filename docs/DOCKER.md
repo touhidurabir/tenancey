@@ -79,3 +79,25 @@ Rebuild after changing anything in `docker/php/`.
 docker compose exec mysql mysql -uroot -pdocker -e 'SHOW DATABASES'
 docker compose exec redis redis-cli ping
 ```
+
+## The app and nginx
+
+```
+browser → Mac :8000 → nginx (:80) ─ static file in public/? serve it
+                                  └ otherwise FastCGI → app:9000 (PHP-FPM) → Laravel
+```
+- `compose.yaml` keeps Docker's settings in the `x-laravel-env` block and the shared PHP service
+  setup in `x-php` (YAML anchors). `app` is `x-php` with the image's default command, `php-fpm`.
+- Those settings are container environment variables, so they win over `.env`. `.env` still
+  supplies everything else, including the keys and secrets.
+- nginx (`docker/nginx/default.conf`) answers every host name (`server_name _`); Laravel tells
+  central and tenants apart by the Host header. It mounts only `public/`, read-only, at the same
+  path as in `app`.
+- The project is bind-mounted into `app`: code changes apply on the next request, no rebuild.
+
+```bash
+docker compose up -d --build                      # --build after changing docker/php/
+docker compose exec app php artisan migrate --seed --no-interaction
+docker compose exec app php artisan <anything>    # artisan always runs inside app
+curl -i http://tenancey.localhost:8000/up
+```
