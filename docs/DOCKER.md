@@ -43,3 +43,20 @@ Anything stored in a file is shared, so three things needed care:
 
 To try a Docker-style build on the Mac: `ASSET_BUILD_DIRECTORY=build-docker npm run dev`
 (then `rm -rf public/build-docker`).
+
+## The PHP image (`docker/php/`)
+
+One image, `tenancey-php:dev`, runs all four PHP services (`app`, `horizon`, `reverb`,
+`scheduler`). It is `php:8.4-fpm` plus:
+- extensions `pdo_mysql`, `pcntl` (bundled) and `redis` 6.3.0 (PECL); `posix` is built in;
+- `git`, `unzip` and Composer 2;
+- `docker/php/php.ini`, loaded last as `zz-tenancey.ini` (512M memory, errors shown).
+
+It holds no code: the project is bind-mounted at `/var/www/html`. The build context is
+`docker/php/`, so the project folder is never sent to the builder.
+
+```bash
+docker build -t tenancey-php:dev docker/php     # Compose builds it for you once the app service exists
+docker run --rm -v "$PWD":/var/www/html tenancey-php:dev composer check-platform-reqs
+```
+Rebuild after changing anything in `docker/php/`.
