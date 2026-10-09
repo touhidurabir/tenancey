@@ -198,6 +198,25 @@ php artisan schedule:work    # local
 # production cron: * * * * * php /path/to/artisan schedule:run >> /dev/null 2>&1
 ```
 
+## Run with Docker (alternative to Valet)
+
+The whole stack also runs in Docker, side by side with a Valet setup in the same folder:
+PHP-FPM, nginx, MySQL, Redis, Horizon, Reverb, the scheduler and Mailpit. It needs Docker
+Desktop and an `.env` with the keys from [step 3](#3-configure-env). Docker's hosts, database and
+ports are set in `compose.yaml` and override `.env`.
+
+```bash
+docker compose up -d --build
+docker compose exec app composer install           # if vendor/ doesn't exist yet
+docker compose exec app php artisan migrate --seed --no-interaction
+docker compose run --rm node                       # build assets
+docker compose restart horizon reverb scheduler    # if they started before vendor/ existed
+```
+
+Then open http://tenancey.localhost:8000 (mail at http://localhost:8025). Run the tests with
+`docker compose exec app php artisan test`. Ports, daily commands and troubleshooting are in
+[docs/DOCKER.md](docs/DOCKER.md).
+
 ## Database user privileges
 
 The `.env` database user is the **master** user. It creates and drops tenant databases, and

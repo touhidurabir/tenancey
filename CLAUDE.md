@@ -23,6 +23,8 @@ Read the matching doc before changing routes, middleware, queue config, Horizon 
   resolver, the middleware chain, the bootstrappers, sessions, and where each piece lives.
 - `docs/QUEUES.md`: driver vs queue connection vs queue, the Redis connections, Horizon
   supervisors vs workers, and the timing rules.
+- `docs/DOCKER.md`: the Docker local-development setup next to Valet: services, ports, how the two
+  setups share one folder, daily commands, troubleshooting.
 - `docs/BROADCASTING.md`: live provisioning/teardown over Reverb. Covers the channels, channel
   auth with the `central` guard, the path from a tenant save to the browser, and why the events
   use `ShouldBroadcastNow`.
@@ -37,6 +39,13 @@ Read the matching doc before changing routes, middleware, queue config, Horizon 
 - Redis (local, phpredis) holds queues, cache and sessions. Mail goes over SMTP to HELO on port 2525.
 - Central admin login: `admin@tenancey.test` / `password` (from `DatabaseSeeder`).
 - Horizon and Reverb (WebSockets, port 8081) run under supervisor: `deploy/supervisor/` (README there).
+- **Docker runs side by side** at **http://tenancey.localhost:8000** (`compose.yaml`, guide in
+  `docs/DOCKER.md`): its own MySQL (`127.0.0.1:3307` from the Mac), Redis, Mailpit, Horizon, Reverb
+  (8082) and scheduler, sharing this folder. Docker settings are container env vars that beat `.env`.
+  Docker's assets build into `public/build-docker` (`ASSET_BUILD_DIRECTORY`).
+  - In Docker, run artisan as `docker compose exec app php artisan …`.
+- **Never run `php artisan config:cache` or `optimize`**: `bootstrap/cache` is shared, so one setup's
+  hosts and ports would leak into the other. If it happens, `php artisan config:clear`.
 
 ## Multi-tenancy (stancl/tenancy v3, one database per tenant)
 
@@ -173,6 +182,9 @@ vendor/bin/pint --dirty        # format changed PHP files
 
 ## Testing
 
+- `phpunit.xml` pins `APP_URL`/`CENTRAL_DOMAIN` to `tenancey.test` with `<server>` (not `<env>`, which
+  can't beat Docker's container env), so link assertions are identical on Valet and in Docker
+  (`docker compose exec app php artisan test`).
 - Tests use real MySQL (`tenancey_testing`) and test-only prefixes: `tenanceytest_`, `tx_`,
   `storage/testtenant_`, and Redis DBs 13–15. All of these are set in `phpunit.xml`.
 - `Tests\TestCase` refuses any other database. It uses `DatabaseTruncation` (not `RefreshDatabase`,

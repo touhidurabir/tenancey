@@ -183,3 +183,52 @@ docker compose exec app php artisan test --compact
 - Everything else comes from `phpunit.xml` as on Valet: the `tenancey_testing` database (created
   by `docker/mysql/init/`), the test prefixes, and Redis DBs 13–15, all in Docker's MySQL and
   Redis.
+
+## Daily use
+
+```bash
+docker compose up -d                            # start everything (after a reboot, Docker Desktop restarts it anyway)
+docker compose ps                               # what's running
+docker compose logs -f <service>                # follow one service's output (Ctrl+C stops following)
+docker compose exec app php artisan …           # any artisan command
+docker compose run --rm node                    # build assets (first time, or after package*.json changes)
+docker compose run --rm node npm run dev        # rebuild assets after CSS/JS changes
+docker compose restart horizon reverb           # after changing job or Reverb code
+docker compose up -d                            # after changing compose.yaml (recreates what changed)
+docker compose up -d --build                    # after changing docker/php/
+docker compose stop                             # stop for the day, keep the containers
+docker compose down                             # remove the containers and network; data stays in the volumes
+```
+
+| Service | URL / address |
+|---|---|
+| Central app | http://tenancey.localhost:8000 (Horizon at `/horizon`, logs at `/log-viewer`) |
+| A tenant | http://{subdomain}.tenancey.localhost:8000 |
+| Mail inbox | http://localhost:8025 |
+| MySQL from the Mac | `127.0.0.1:3307`, user `root`, password `docker` |
+
+### Resetting Docker's data
+
+**Delete Docker's tenants in the UI first.** Their storage folders live in the shared
+`storage/` folder on the Mac, and only a teardown removes them. Then:
+```bash
+docker compose down -v      # also deletes the tenancey_* volumes: Docker's MySQL, Redis and node_modules
+docker compose up -d
+docker compose exec app php artisan migrate --seed --no-interaction
+docker compose run --rm node
+```
+`-v` only deletes this project's named volumes. Valet's MySQL, Redis and the Mac's
+`node_modules` are never touched.
+
+## Troubleshooting
+
+| Symptom | Cause and fix |
+|---|---|
+| `up` fails with "port is already allocated" | Something on the Mac uses that port. `lsof -i :<port>` shows what |
+| "Vite manifest not found at …/build-docker/manifest.json" | Docker's assets aren't built: `docker compose run --rm node` |
+| Docker pages try to load assets from `localhost:517x` | A stale `public/build-docker.hot` file. Delete it |
+| Docker uses Valet's hosts or database (or the other way round) | Someone ran `config:cache`/`optimize`: `php artisan config:clear` (see [The one rule](#the-one-rule)) |
+| A tenant stays in "Provisioning" | `docker compose ps`: is `horizon` up? `docker compose logs horizon` |
+| Job or Reverb code changes have no effect | `docker compose restart horizon reverb` |
+| A `compose.yaml` change has no effect | `docker compose up -d`, not `restart`: settings are fixed when a container is created |
+| Pages are slow | Bind-mounted files are slower than the Mac's own disk. Check Docker Desktop → Settings → General uses **VirtioFS**. The heavier fix (not built): keep `vendor/` in a named volume like `node_modules`, with `composer install` run inside the container |
