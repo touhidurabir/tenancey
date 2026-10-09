@@ -56,6 +56,19 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Asset Build Directory
+    |--------------------------------------------------------------------------
+    |
+    | Folder under public/ that Vite builds into. Unset means "build" (Valet).
+    | Docker sets ASSET_BUILD_DIRECTORY=build-docker so the two setups never
+    | overwrite each other's assets (see docs/DOCKER.md).
+    |
+    */
+
+    'asset_build_directory' => env('ASSET_BUILD_DIRECTORY'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Timezone
     |--------------------------------------------------------------------------
     |
