@@ -40,6 +40,12 @@ services:
   app:
     <<: *php # PHP-FPM, the image's default command
 
+  horizon:
+    <<: *php
+    command: php artisan horizon
+    stop_signal: SIGTERM # the image's SIGQUIT is for PHP-FPM; Horizon shuts down gracefully on SIGTERM
+    stop_grace_period: 660s # must exceed the longest job timeout (600s), like supervisor's stopwaitsecs
+
   nginx:
     image: nginx:1.30-alpine
     ports:
@@ -73,6 +79,28 @@ services:
       - redis-data:/data
     restart: unless-stopped
 
+  mailpit:
+    image: axllent/mailpit:v1.29
+    ports:
+      - "8025:8025" # web inbox: http://localhost:8025 (SMTP 1025 stays inside the network)
+    restart: unless-stopped
+
+  # One-off asset build: docker compose run --rm node
+  node:
+    image: node:22.12-bookworm-slim
+    profiles: [tools] # not started by `docker compose up`
+    working_dir: /var/www/html
+    command: sh -c "npm ci && npm run dev"
+    environment:
+      ASSET_BUILD_DIRECTORY: build-docker
+      VITE_REVERB_HOST: localhost # the browser reaches Reverb on the Mac's port 8082
+      VITE_REVERB_PORT: "8082"
+      VITE_REVERB_SCHEME: http
+    volumes:
+      - .:/var/www/html
+      - node-modules:/var/www/html/node_modules # Linux packages; the Mac's node_modules stays untouched
+
 volumes:
   mysql-data:
   redis-data:
+  node-modules:

@@ -101,3 +101,37 @@ docker compose exec app php artisan migrate --seed --no-interaction
 docker compose exec app php artisan <anything>    # artisan always runs inside app
 curl -i http://tenancey.localhost:8000/up
 ```
+
+## Building assets (node)
+
+Docker's CSS and JS are built by a one-off `node` container (Node 22.12, as in `.nvmrc`) into
+`public/build-docker`, with `VITE_REVERB_PORT=8082` baked in for the browser.
+- It has the `tools` profile, so `docker compose up` never starts it.
+- A named volume covers `node_modules` inside it, so the container installs Linux packages there
+  while the Mac's `node_modules` (macOS packages, for Valet's build) stays untouched.
+- Nothing runs afterwards: nginx serves the built files, and Laravel reads the manifest.
+
+```bash
+docker compose run --rm node                  # npm ci + build: first time, or after package*.json changes
+docker compose run --rm node npm run dev      # rebuild only, after CSS/JS/Blade class changes
+docker volume rm tenancey_node-modules        # reset Docker's packages (refilled on the next run)
+```
+
+## Horizon and Mailpit
+
+- `horizon` is the PHP image with `command: php artisan horizon`. It replaces the supervisor
+  program: `restart: unless-stopped` brings it back after a crash or a Docker restart.
+  - `stop_signal: SIGTERM` is required: the PHP image's default stop signal (SIGQUIT) is for
+    PHP-FPM, and Horizon ignores it.
+  - `stop_grace_period: 660s` gives running jobs time to finish (longest job timeout 600s),
+    like supervisor's `stopwaitsecs`.
+- **After changing job code, restart Horizon**: `docker compose restart horizon` (instead of
+  `php artisan horizon:terminate`). Long-running workers keep the old code in memory.
+- `mailpit` catches every mail the PHP services send (`mailpit:1025`); nothing leaves your
+  machine. Read the inbox at http://localhost:8025.
+
+```bash
+docker compose logs -f horizon                # follow the queue workers (Ctrl+C stops following)
+docker compose restart horizon                # after changing job code
+# dashboard: http://tenancey.localhost:8000/horizon   mail: http://localhost:8025
+```
