@@ -169,3 +169,17 @@ docker compose exec scheduler php artisan schedule:list   # what's scheduled, an
 docker compose exec scheduler php artisan schedule:test   # run one task now
 # no restart needed after editing routes/console.php: each minute's schedule:run is a new PHP process
 ```
+
+## Running the tests
+
+```bash
+docker compose exec app php artisan test --compact
+```
+- `phpunit.xml` pins `APP_URL` and `CENTRAL_DOMAIN` to Valet's `tenancey.test` names with
+  `<server>` entries, so link assertions are the same everywhere. Tests never make real HTTP
+  requests, so the names don't have to be reachable from Docker.
+- `<server>` writes `$_SERVER`, which Laravel reads first. That's why it wins over the
+  container's environment, where `<env>` entries can't.
+- Everything else comes from `phpunit.xml` as on Valet: the `tenancey_testing` database (created
+  by `docker/mysql/init/`), the test prefixes, and Redis DBs 13–15, all in Docker's MySQL and
+  Redis.
