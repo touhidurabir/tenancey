@@ -46,6 +46,14 @@ services:
     stop_signal: SIGTERM # the image's SIGQUIT is for PHP-FPM; Horizon shuts down gracefully on SIGTERM
     stop_grace_period: 660s # must exceed the longest job timeout (600s), like supervisor's stopwaitsecs
 
+  reverb:
+    <<: *php
+    command: php artisan reverb:start
+    ports:
+      - "8082:8080" # the browser connects to localhost:8082; PHP containers use reverb:8080
+    stop_signal: SIGTERM # as for horizon: Reverb shuts down on SIGTERM, not the image's SIGQUIT
+    stop_grace_period: 30s
+
   nginx:
     image: nginx:1.30-alpine
     ports:

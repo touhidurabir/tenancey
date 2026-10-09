@@ -135,3 +135,25 @@ docker compose logs -f horizon                # follow the queue workers (Ctrl+C
 docker compose restart horizon                # after changing job code
 # dashboard: http://tenancey.localhost:8000/horizon   mail: http://localhost:8025
 ```
+
+## Reverb
+
+One Reverb container, reached on two addresses:
+```
+Laravel (app, horizon) ── reverb:8080 ──────────────────────────▶ reverb container :8080
+Browser (on the Mac)   ── localhost:8082 ── published 8082:8080 ─▶ reverb container :8080
+```
+- **Run time, for PHP:** `REVERB_HOST=reverb`, `REVERB_PORT=8080` (in `x-laravel-env`). Laravel
+  sends events over the Compose network.
+- **Build time, for the browser:** `VITE_REVERB_HOST=localhost`, `VITE_REVERB_PORT=8082` (in the
+  `node` service), baked into Docker's JS. Change them, then rebuild with
+  `docker compose run --rm node npm run dev`.
+- The server binds `0.0.0.0:8080` inside its container (`REVERB_SERVER_*`). Port 8080 there is
+  the container's own; it doesn't clash with anything on the Mac. Valet's Reverb keeps 8081.
+- `stop_signal: SIGTERM`, as for Horizon.
+
+```bash
+docker compose restart reverb     # after changing Reverb-related code or .env values (replaces reverb:restart)
+docker compose up -d              # after changing compose.yaml: recreates the changed containers
+docker compose logs -f reverb
+```
