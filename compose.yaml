@@ -54,6 +54,11 @@ services:
     stop_signal: SIGTERM # as for horizon: Reverb shuts down on SIGTERM, not the image's SIGQUIT
     stop_grace_period: 30s
 
+  scheduler:
+    <<: *php
+    command: php artisan schedule:work # runs due tasks every minute; replaces a cron entry
+    # No stop_signal: schedule:work handles SIGQUIT (and SIGTERM) itself, finishing running tasks first.
+
   nginx:
     image: nginx:1.30-alpine
     ports:

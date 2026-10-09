@@ -157,3 +157,15 @@ docker compose restart reverb     # after changing Reverb-related code or .env v
 docker compose up -d              # after changing compose.yaml: recreates the changed containers
 docker compose logs -f reverb
 ```
+
+## The scheduler
+
+`scheduler` runs `php artisan schedule:work`: a loop that starts `schedule:run` at the top of
+every minute, which runs whatever is due (today: `model:prune` for impersonation tokens, daily
+at 00:00 UTC). It replaces the cron entry a server would have; containers don't run cron.
+
+```bash
+docker compose exec scheduler php artisan schedule:list   # what's scheduled, and when it's next due
+docker compose exec scheduler php artisan schedule:test   # run one task now
+# no restart needed after editing routes/console.php: each minute's schedule:run is a new PHP process
+```
