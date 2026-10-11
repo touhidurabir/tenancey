@@ -44,8 +44,9 @@ Read the matching doc before changing routes, middleware, queue config, Horizon 
   (8082) and scheduler, sharing this folder. Docker settings are container env vars that beat `.env`.
   Docker's assets build into `public/build-docker` (`ASSET_BUILD_DIRECTORY`).
   - In Docker, run artisan as `docker compose exec app php artisan …`.
-- **Never run `php artisan config:cache` or `optimize`**: `bootstrap/cache` is shared, so one setup's
-  hosts and ports would leak into the other. If it happens, `php artisan config:clear`.
+- **Never run `php artisan config:cache`, `route:cache` or `optimize`**: `bootstrap/cache` is shared, so
+  one setup's hosts and ports (and the central domain in the route cache) would leak into the other.
+  If it happens, `php artisan optimize:clear`.
 
 ## Multi-tenancy (stancl/tenancy v3, one database per tenant)
 

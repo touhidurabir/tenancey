@@ -20,9 +20,11 @@ Design: `docs/superpowers/specs/2026-10-07-docker-local-dev-design.md`.
 
 ## The one rule
 
-**Never run `php artisan config:cache` or `php artisan optimize`, in either setup.** The cache
-file `bootstrap/cache/config.php` lives in the shared folder, so it would force one setup's hosts
-and ports onto the other. If it happens, run `php artisan config:clear`.
+**Never run `php artisan config:cache`, `route:cache` or `optimize`, in either setup.** The cache
+files in `bootstrap/cache` live in the shared folder, so they would force one setup's hosts and
+ports onto the other: `config.php` freezes the settings, and `routes-v7.php` freezes the central
+domain (`routes/web.php` binds central routes to `CENTRAL_DOMAIN`). If it happens, run
+`php artisan optimize:clear`, which removes both.
 
 ## How the two setups share one folder
 
@@ -227,7 +229,7 @@ docker compose run --rm node
 | `up` fails with "port is already allocated" | Something on the Mac uses that port. `lsof -i :<port>` shows what |
 | "Vite manifest not found at …/build-docker/manifest.json" | Docker's assets aren't built: `docker compose run --rm node` |
 | Docker pages try to load assets from `localhost:517x` | A stale `public/build-docker.hot` file. Delete it |
-| Docker uses Valet's hosts or database (or the other way round) | Someone ran `config:cache`/`optimize`: `php artisan config:clear` (see [The one rule](#the-one-rule)) |
+| Docker uses Valet's hosts or database (or the other way round) | Someone ran `config:cache`/`route:cache`/`optimize`: `php artisan optimize:clear` (see [The one rule](#the-one-rule)) |
 | A tenant stays in "Provisioning" | `docker compose ps`: is `horizon` up? `docker compose logs horizon` |
 | Job or Reverb code changes have no effect | `docker compose restart horizon reverb` |
 | A `compose.yaml` change has no effect | `docker compose up -d`, not `restart`: settings are fixed when a container is created |
