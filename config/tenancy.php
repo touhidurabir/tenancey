@@ -7,6 +7,7 @@ use App\Tenancy\Database\MySqlDatabaseUserManager;
 use App\Tenancy\SpatiePermissionsBootstrapper;
 use App\Tenancy\Storage\LocalBucketManager;
 use App\Tenancy\Storage\S3BucketManager;
+use App\Tenancy\TenantBucketBootstrapper;
 use App\Tenancy\TenantRedisBootstrapper;
 use Stancl\Tenancy\Bootstrappers\DatabaseTenancyBootstrapper;
 use Stancl\Tenancy\Bootstrappers\FilesystemTenancyBootstrapper;
@@ -44,6 +45,7 @@ return [
         // connections (sessions + cache) with the tenant's own `cache_prefix` column.
         TenantRedisBootstrapper::class,
         FilesystemTenancyBootstrapper::class,
+        TenantBucketBootstrapper::class,
         QueueTenancyBootstrapper::class,
         SpatiePermissionsBootstrapper::class,
         // Stancl\Tenancy\Bootstrappers\RedisTenancyBootstrapper::class, // Note: phpredis is needed
@@ -142,8 +144,8 @@ return [
          * Each disk listed in the 'disks' array will be suffixed by the suffix_base, followed by the tenant_id.
          */
         'suffix_base' => env('TENANT_STORAGE_PREFIX', 'tenant_'), // storage/tenant_{id}
+        // 'local' is TenantBucketBootstrapper's (one bucket per tenant on every driver).
         'disks' => [
-            'local',
             'public',
             // 's3',
         ],
@@ -155,7 +157,6 @@ return [
          */
         'root_override' => [
             // Disks whose roots should be overridden after storage_path() is suffixed.
-            'local' => '%storage_path%/app/',
             'public' => '%storage_path%/app/public/',
         ],
 
