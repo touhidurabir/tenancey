@@ -16,7 +16,7 @@ class CreateTenantBuckets extends Command
     public function handle(): int
     {
         Tenant::query()->whereNotNull('storage_bucket')->orderBy('id')->each(function (Tenant $tenant) {
-            TenantResourceGuard::assertOwned($tenant);
+            TenantResourceGuard::assertBucketOwned($tenant);
 
             BucketManagers::forDisk($tenant->storage_disk)->create($tenant->storage_bucket);
 

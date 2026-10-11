@@ -56,12 +56,22 @@ class TenantBucketBootstrapper implements TenancyBootstrapper
 
         Storage::forgetDisk($disk);
 
+        if ($disk !== 'local') {
+            // Code that names the `local` disk still gets a tenant-only folder: the one stancl's
+            // FilesystemTenancyBootstrapper (which runs first) has suffixed storage_path() to.
+            $this->original['filesystems.disks.local'] = config('filesystems.disks.local');
+            config(['filesystems.disks.local.root' => storage_path('app')]);
+            Storage::forgetDisk('local');
+        }
+
         if ($manager instanceof LocalBucketManager) {
             // S3/MinIO sign their own links. Local ones go through a tenant route, signed relative
-            // (path + query) and made absolute with the tenant's own host (Tenant::url()).
+            // (path + query) and made absolute with the tenant's own host (Tenant::url()). The
+            // host isn't signed, so the tenant key is: paths ({media id}/{name}) repeat across
+            // tenants, and a link replayed on another tenant's host must not serve its file.
             Storage::disk($disk)->buildTemporaryUrlsUsing(
                 fn (string $path, DateTimeInterface $expiration) => $tenant->url(
-                    URL::temporarySignedRoute('tenant.storage.local', $expiration, ['path' => $path], absolute: false),
+                    URL::temporarySignedRoute('tenant.storage.local', $expiration, ['path' => $path, 'tenant' => $tenant->getTenantKey()], absolute: false),
                 ),
             );
         }
@@ -74,7 +84,7 @@ class TenantBucketBootstrapper implements TenancyBootstrapper
         }
 
         config($this->original);
-        Storage::forgetDisk($this->disk);
+        Storage::forgetDisk(array_unique([$this->disk, 'local']));
 
         $this->original = [];
         $this->disk = null;

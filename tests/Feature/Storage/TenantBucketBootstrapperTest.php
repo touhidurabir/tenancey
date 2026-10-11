@@ -5,6 +5,7 @@ namespace Tests\Feature\Storage;
 use App\Enums\TenantState;
 use App\Models\Tenant;
 use App\Tenancy\TenantBucketBootstrapper;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use RuntimeException;
@@ -39,6 +40,26 @@ class TenantBucketBootstrapperTest extends TestCase
         $this->assertFalse(Storage::exists('probe.txt'));
         $this->assertSame('acme', file_get_contents(storage_path("app/buckets/{$acme->storage_bucket}/probe.txt")));
         $this->assertSame('beta', file_get_contents(storage_path("app/buckets/{$beta->storage_bucket}/probe.txt")));
+    }
+
+    public function test_the_local_disk_stays_tenant_scoped_for_a_tenant_on_another_disk(): void
+    {
+        $tenant = $this->createTenant('acme');
+        DB::table('tenants')->where('id', $tenant->id)->update(['storage_disk' => 's3']); // as on MinIO/S3, no network needed
+        $centralRoot = config('filesystems.disks.local.root');
+        $central = $centralRoot.'/scope-probe.txt';
+
+        try {
+            tenancy()->initialize($tenant->fresh());
+            Storage::disk('local')->put('scope-probe.txt', 'acme');
+            tenancy()->end();
+
+            $this->assertFileDoesNotExist($central);
+            $this->assertFileExists(base_path($tenant->storage_path).'/app/scope-probe.txt');
+            $this->assertSame($centralRoot, config('filesystems.disks.local.root'));
+        } finally {
+            @unlink($central);
+        }
     }
 
     public function test_a_tenant_without_a_recorded_bucket_is_refused(): void

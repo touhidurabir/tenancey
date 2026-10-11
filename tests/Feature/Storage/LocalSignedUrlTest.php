@@ -38,13 +38,15 @@ class LocalSignedUrlTest extends TestCase
     public function test_a_signed_url_for_one_tenant_does_not_work_on_another(): void
     {
         $acme = $this->createTenant('acme');
-        $this->createTenant('beta');
+        $beta = $this->createTenant('beta');
 
+        // Same path in both buckets: medialibrary paths ({media id}/{name}) repeat across tenants.
+        $beta->run(fn () => Storage::put('1/report.txt', 'beta secret'));
         tenancy()->initialize($acme);
-        Storage::put('secret.txt', 'acme only');
-        $url = Storage::temporaryUrl('secret.txt', now()->addMinutes(5));
+        Storage::put('1/report.txt', 'acme');
+        $url = Storage::temporaryUrl('1/report.txt', now()->addMinutes(5));
         tenancy()->end();
 
-        $this->get(str_replace('acme.', 'beta.', $url))->assertNotFound();
+        $this->get(str_replace('acme.', 'beta.', $url))->assertForbidden();
     }
 }

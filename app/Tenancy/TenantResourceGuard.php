@@ -25,24 +25,40 @@ class TenantResourceGuard
 
     public static function assertOwned(Tenant $tenant): void
     {
-        $expected = [
+        static::assertColumns($tenant, [
             'db_name' => static::databaseNameFor($tenant->uuid),
             'storage_path' => static::storagePathFor($tenant->uuid),
-            'storage_bucket' => static::bucketNameFor($tenant->uuid),
-        ];
+        ]);
 
-        foreach ($expected as $column => $value) {
-            if ($tenant->{$column} !== $value) {
-                throw new RuntimeException("Refusing to touch tenant [{$tenant->uuid}]: {$column} is [{$tenant->{$column}}], expected [{$value}].");
-            }
+        if ($tenant->hasDedicatedDatabaseUser()) {
+            static::assertUsernameAllowed($tenant->db_username);
         }
+    }
+
+    /**
+     * Before creating or deleting the tenant's bucket. Kept apart from assertOwned() so a bucket
+     * setting gone wrong (a removed disk, a changed TENANT_BUCKET_PREFIX) stops only the bucket
+     * steps, never the database and folder steps of a retry or teardown.
+     */
+    public static function assertBucketOwned(Tenant $tenant): void
+    {
+        static::assertOwned($tenant);
+        static::assertColumns($tenant, ['storage_bucket' => static::bucketNameFor($tenant->uuid)]);
 
         if (! is_array(config('filesystems.disks.'.$tenant->storage_disk))) {
             throw new RuntimeException("Refusing to touch tenant [{$tenant->uuid}]: storage_disk [{$tenant->storage_disk}] is not a configured disk.");
         }
+    }
 
-        if ($tenant->hasDedicatedDatabaseUser()) {
-            static::assertUsernameAllowed($tenant->db_username);
+    /**
+     * @param  array<string, string>  $expected
+     */
+    protected static function assertColumns(Tenant $tenant, array $expected): void
+    {
+        foreach ($expected as $column => $value) {
+            if ($tenant->{$column} !== $value) {
+                throw new RuntimeException("Refusing to touch tenant [{$tenant->uuid}]: {$column} is [{$tenant->{$column}}], expected [{$value}].");
+            }
         }
     }
 

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Tenant;
 
 use App\Http\Controllers\Controller;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -12,8 +13,11 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  */
 class LocalFileController extends Controller
 {
-    public function __invoke(string $path): StreamedResponse
+    public function __invoke(Request $request, string $path): StreamedResponse
     {
+        // The signature covers the tenant key, not the host: a link made for another tenant.
+        abort_unless($request->query('tenant') === tenant()->getTenantKey(), 403);
+
         $disk = Storage::disk(tenant('storage_disk'));
 
         abort_unless(config('filesystems.disks.'.tenant('storage_disk').'.driver') === 'local' && $disk->exists($path), 404);

@@ -16,6 +16,7 @@ use App\Jobs\TenantJob;
 use App\Models\Tenant;
 use App\Tenancy\Database\DatabaseCredentials;
 use App\Tenancy\Database\DatabaseUserManager;
+use App\Tenancy\Storage\BucketManagers;
 use App\Tenancy\TenantResourceGuard;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Context;
@@ -67,6 +68,10 @@ class TenantProvisioner
     public function provision(array $data): Tenant
     {
         $dedicated = (bool) ($data['dedicated_db_user'] ?? false);
+
+        // A tenant recorded on a disk we can't make buckets on could never be torn down: refuse it
+        // before the row exists (e.g. a typo in FILESYSTEM_DISK).
+        BucketManagers::forDisk((string) config('filesystems.default'));
 
         // Generate before the transaction: it reads the database server's user list.
         $dbUsername = $dedicated ? (filled($data['db_username'] ?? null) ? $data['db_username'] : DatabaseCredentials::generateUsername(app(DatabaseUserManager::class))) : null;

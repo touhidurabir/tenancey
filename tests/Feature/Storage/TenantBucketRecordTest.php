@@ -43,7 +43,7 @@ class TenantBucketRecordTest extends TestCase
         $this->expectException(RuntimeException::class);
         $this->expectExceptionMessage('storage_bucket');
 
-        TenantResourceGuard::assertOwned($tenant->fresh());
+        TenantResourceGuard::assertBucketOwned($tenant->fresh());
     }
 
     public function test_the_guard_refuses_an_unknown_disk(): void
@@ -54,6 +54,30 @@ class TenantBucketRecordTest extends TestCase
         $this->expectException(RuntimeException::class);
         $this->expectExceptionMessage('storage_disk');
 
-        TenantResourceGuard::assertOwned($tenant->fresh());
+        TenantResourceGuard::assertBucketOwned($tenant->fresh());
+    }
+
+    public function test_database_and_folder_steps_do_not_depend_on_the_bucket_settings(): void
+    {
+        $tenant = $this->createTenant('acme');
+        DB::table('tenants')->where('id', $tenant->id)->update(['storage_disk' => 'ftp']);
+
+        TenantResourceGuard::assertOwned($tenant->fresh()); // a bad disk must not block teardown's database steps
+
+        $this->addToAssertionCount(1);
+    }
+
+    public function test_provisioning_refuses_a_default_disk_it_cannot_make_buckets_on(): void
+    {
+        config()->set('filesystems.default', 'S3'); // a typo in FILESYSTEM_DISK
+
+        try {
+            $this->createTenant('acme');
+            $this->fail('Expected provisioning to refuse the disk.');
+        } catch (InvalidArgumentException $e) {
+            $this->assertStringContainsString('[S3]', $e->getMessage());
+        }
+
+        $this->assertDatabaseCount('tenants', 0); // no row that could never be torn down
     }
 }

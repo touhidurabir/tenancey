@@ -20,7 +20,7 @@ class DeleteTenantBucket extends TenantJob
 
     protected function process(Tenant $tenant): void
     {
-        TenantResourceGuard::assertOwned($tenant);
+        TenantResourceGuard::assertBucketOwned($tenant);
 
         $manager = BucketManagers::forDisk($tenant->storage_disk);
 

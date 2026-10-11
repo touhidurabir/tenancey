@@ -151,7 +151,10 @@ Read the matching doc before changing routes, middleware, queue config, Horizon 
   `storage_disk` (`local` folder, MinIO or S3); details in `docs/STORAGE.md`.
   - `FILESYSTEM_DISK` only decides the disk of NEW tenants. Existing ones keep theirs.
   - Buckets are created and deleted only through `App\Tenancy\Storage\BucketManager`, behind
-    `TenantResourceGuard`. Never delete buckets by pattern: the Mac's MinIO is shared.
+    `TenantResourceGuard::assertBucketOwned()`. Never delete buckets by pattern: the Mac's MinIO
+    is shared. Don't change `TENANT_BUCKET_PREFIX` once tenants exist.
+  - Local signed links carry the tenant key (the host isn't signed): keep it when touching
+    `tenant.storage.local`.
   - `App\Tenancy\TenantBucketBootstrapper` points the disk (and medialibrary) at the bucket while
     tenancy is on. stancl's filesystem bootstrapper no longer touches `local`.
   - Files are spatie/laravel-medialibrary (`media` is a tenant table). Downloads are 5-minute

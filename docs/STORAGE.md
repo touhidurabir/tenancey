@@ -25,6 +25,10 @@ files.
   characters, lowercase letters, digits and hyphens (S3's rules). The prefix must end with `-`;
   `TenantResourceGuard::bucketNameFor()` checks it.
 - **On `local`** a bucket is a folder: `storage/app/buckets/{bucket}` (`tenancy.storage.local_root`).
+- **Provisioning refuses** a `FILESYSTEM_DISK` it can't make buckets on (a typo, or a disk with no
+  bucket manager) before saving the tenant, so no tenant is recorded on a disk it can't tear down.
+- **Keep `TENANT_BUCKET_PREFIX` once tenants exist.** Buckets are checked against
+  `prefix + uuid`, so a new prefix makes the bucket steps of existing tenants refuse to run.
 - **Recorded on the tenant row:** `storage_disk` and `storage_bucket`. A tenant keeps the disk it
   was created with, so **changing `FILESYSTEM_DISK` only affects new tenants**. Old ones keep
   working on their recorded disk. Moving a tenant's files between disks is not built.
@@ -40,7 +44,7 @@ files.
 | `S3BucketManager` | real buckets through the disk's S3 client. `delete` empties the bucket first (all versions and delete markers), because S3 refuses to delete a non-empty bucket |
 | `App\Jobs\Provisioning\CreateTenantBucket` | provisioning step "Create storage bucket", after "Prepare storage" |
 | `App\Jobs\Teardown\DeleteTenantBucket` | teardown step "Delete storage bucket", after "Delete storage". Lists what is really in the bucket, never the `media` rows (that database is already gone) |
-| `App\Tenancy\TenantResourceGuard` | both steps (and the command) check the row's `storage_bucket` is EXACTLY `prefix + uuid` and that `storage_disk` is a configured disk |
+| `App\Tenancy\TenantResourceGuard` | `assertBucketOwned()`, used by both steps and the command, checks the row's `storage_bucket` is EXACTLY `prefix + uuid` and that `storage_disk` is a configured disk. The database and folder steps use `assertOwned()`, which ignores bucket settings, so a bucket setting gone wrong never blocks them |
 | `App\Tenancy\TenantBucketBootstrapper` | while tenancy is on, see below |
 
 **`TenantBucketBootstrapper`**, on each tenant switch:
@@ -52,6 +56,9 @@ files.
 
 stancl's `FilesystemTenancyBootstrapper` still suffixes `storage_path()` and the `public` disk.
 It no longer touches `local` (removed from `tenancy.filesystem.disks` and `root_override`).
+For a tenant whose disk is NOT `local` (MinIO, S3), `TenantBucketBootstrapper` still points
+`local` at the tenant's own folder (`storage/tenant_{uuid}/app`), so code that names `local`
+never writes into the shared central folder.
 
 ## 4. Files in the app
 
@@ -65,8 +72,9 @@ It no longer touches `local` (removed from `tenancy.filesystem.disks` and `root_
   - local: the tenant route `tenant.storage.local` (`/storage/local/{path}`, `signed:relative`),
     served by `LocalFileController` from the current tenant's bucket.
 - The local link is signed **relative** (path and query, not the host) so it works on Valet and
-  Docker alike. Moved to another tenant's host it still passes the signature, but that tenant's
-  bucket doesn't have the file: 404.
+  Docker alike. The host isn't signed, so the **tenant key is**: the link carries `tenant=<uuid>`,
+  and `LocalFileController` answers 403 on any other tenant. (Paths like `1/report.pdf` repeat in
+  every tenant's bucket, so "the file isn't there" would not be enough.)
 - Laravel's own `local` file route (`serve`) is off: it doesn't initialize tenancy.
 
 ## 5. MinIO on the Mac
