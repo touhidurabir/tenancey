@@ -29,9 +29,10 @@ abstract class TestCase extends BaseTestCase
 
         $database = $app['config']->get('database.connections.mysql.database');
         $tenantPrefix = $app['config']->get('tenancy.database.prefix');
+        $bucketPrefix = $app['config']->get('tenancy.storage.bucket_prefix');
 
-        if (! str_ends_with((string) $database, '_testing') || $tenantPrefix !== 'tenanceytest_') {
-            throw new RuntimeException("Refusing to run tests against [{$database}] with tenant prefix [{$tenantPrefix}]. Run them through phpunit.xml.");
+        if (! str_ends_with((string) $database, '_testing') || $tenantPrefix !== 'tenanceytest_' || $bucketPrefix !== 'tenanceytest-') {
+            throw new RuntimeException("Refusing to run tests against [{$database}] with tenant prefix [{$tenantPrefix}] and bucket prefix [{$bucketPrefix}]. Run them through phpunit.xml.");
         }
 
         return $app;

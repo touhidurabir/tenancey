@@ -3,11 +3,12 @@
 namespace App\Tenancy;
 
 use App\Models\Tenant;
+use InvalidArgumentException;
 use RuntimeException;
 
 /**
- * Last line of defence before creating or destroying a tenant's database, database user or
- * storage folder. This database server and storage directory are shared with other apps (and
+ * Last line of defence before creating or destroying a tenant's database, database user,
+ * storage folder or storage bucket. This database server and storage directory are shared with other apps (and
  * with this app's own `tenancey` and `tenancey_testing` databases), so names must match EXACTLY
  * what this tenant was given, not merely start with a prefix.
  *
@@ -27,12 +28,17 @@ class TenantResourceGuard
         $expected = [
             'db_name' => static::databaseNameFor($tenant->uuid),
             'storage_path' => static::storagePathFor($tenant->uuid),
+            'storage_bucket' => static::bucketNameFor($tenant->uuid),
         ];
 
         foreach ($expected as $column => $value) {
             if ($tenant->{$column} !== $value) {
                 throw new RuntimeException("Refusing to touch tenant [{$tenant->uuid}]: {$column} is [{$tenant->{$column}}], expected [{$value}].");
             }
+        }
+
+        if (! is_array(config('filesystems.disks.'.$tenant->storage_disk))) {
+            throw new RuntimeException("Refusing to touch tenant [{$tenant->uuid}]: storage_disk [{$tenant->storage_disk}] is not a configured disk.");
         }
 
         if ($tenant->hasDedicatedDatabaseUser()) {
@@ -84,5 +90,21 @@ class TenantResourceGuard
     public static function storagePathFor(string $uuid): string
     {
         return 'storage/'.config('tenancy.filesystem.suffix_base').$uuid;
+    }
+
+    /**
+     * The tenant's bucket: a real bucket on S3/MinIO, a folder on `local`. S3 bucket names are
+     * global across every AWS account, so the prefix must be unique to this app (and install).
+     */
+    public static function bucketNameFor(string $uuid): string
+    {
+        $prefix = (string) config('tenancy.storage.bucket_prefix');
+        $name = $prefix.$uuid;
+
+        if (! preg_match('/^[a-z0-9][a-z0-9-]*-$/', $prefix) || strlen($name) > 63) {
+            throw new InvalidArgumentException("Invalid tenant bucket prefix [{$prefix}]: lowercase letters, digits and hyphens, ending in a hyphen.");
+        }
+
+        return $name;
     }
 }

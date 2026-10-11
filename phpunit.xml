@@ -36,6 +36,8 @@
         <env name="TENANT_DATABASE_PREFIX" value="tenanceytest_"/>
         <env name="TENANT_DB_USER_PREFIX" value="tx_"/>
         <env name="TENANT_STORAGE_PREFIX" value="testtenant_"/>
+        <env name="FILESYSTEM_DISK" value="local"/>
+        <env name="TENANT_BUCKET_PREFIX" value="tenanceytest-"/>
         <env name="REDIS_DB" value="15"/>
         <env name="REDIS_CACHE_DB" value="14"/>
         <env name="REDIS_QUEUE_DB" value="13"/>

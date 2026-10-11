@@ -84,6 +84,7 @@
                         ? ($tenant->db_master_access ? 'yes (recorded)' : 'no (recorded, not enforced)')
                         : 'yes (it is the connection)',
                     'Storage' => $tenant->storage_path,
+                    'Files' => ($tenant->storage_disk ?? '—').' / '.($tenant->storage_bucket ?? '—'),
                     'Redis prefix' => $tenant->cache_prefix,
                     'Provisioned' => $tenant->provisioned_at?->toDayDateTimeString() ?? '—',
                 ] as $term => $value)

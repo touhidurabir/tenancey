@@ -33,7 +33,9 @@ return [
         'local' => [
             'driver' => 'local',
             'root' => storage_path('app/private'),
-            'serve' => true,
+            // Off: Laravel's built-in serve route doesn't initialize tenancy. Tenant files on this
+            // disk are served by the tenant route `tenant.storage.local` instead.
+            'serve' => false,
             'throw' => false,
             'report' => false,
         ],
@@ -56,7 +58,20 @@ return [
             'url' => env('AWS_URL'),
             'endpoint' => env('AWS_ENDPOINT'),
             'use_path_style_endpoint' => env('AWS_USE_PATH_STYLE_ENDPOINT', false),
-            'throw' => false,
+            'throw' => true,
+            'report' => false,
+        ],
+
+        // MinIO speaks the S3 protocol: same driver, our own endpoint, buckets as paths.
+        'minio' => [
+            'driver' => 's3',
+            'key' => env('MINIO_KEY'),
+            'secret' => env('MINIO_SECRET'),
+            'region' => env('MINIO_REGION', 'us-east-1'),
+            'bucket' => env('MINIO_BUCKET'), // central default; each tenant gets its own (TenantBucketBootstrapper)
+            'endpoint' => env('MINIO_ENDPOINT'),
+            'use_path_style_endpoint' => true,
+            'throw' => true,
             'report' => false,
         ],
 

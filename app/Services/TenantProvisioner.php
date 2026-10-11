@@ -92,6 +92,8 @@ class TenantProvisioner
             // Without a dedicated user the master user IS the connection, so it has access.
             $tenant->db_master_access = $dedicated ? (bool) ($data['db_master_access'] ?? true) : true;
             $tenant->storage_path = TenantResourceGuard::storagePathFor($tenant->uuid);
+            $tenant->storage_disk = config('filesystems.default');
+            $tenant->storage_bucket = TenantResourceGuard::bucketNameFor($tenant->uuid);
             $tenant->cache_prefix = config('tenancy.database.prefix').$tenant->uuid.':';
             $tenant->save();
 
