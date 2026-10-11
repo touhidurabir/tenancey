@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Http\Controllers\Tenant\DashboardController;
 use App\Http\Controllers\Tenant\ImpersonationController;
+use App\Http\Controllers\Tenant\LocalFileController;
 use App\Http\Controllers\Tenant\LoginController;
 use App\Http\Controllers\Tenant\PasswordController;
 use App\Http\Middleware\EnsurePasswordChanged;
@@ -33,6 +34,12 @@ Route::middleware([
         ->middleware('throttle:20,1')
         ->where('token', '[A-Za-z0-9]{64}')
         ->name('impersonate');
+
+    // Temporary links to files on the `local` disk (TenantBucketBootstrapper signs them).
+    Route::get('storage/local/{path}', LocalFileController::class)
+        ->middleware('signed:relative')
+        ->where('path', '.*')
+        ->name('tenant.storage.local');
 
     Route::middleware('guest')->group(function () {
         Route::get('login', [LoginController::class, 'create'])->name('login');

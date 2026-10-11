@@ -4,7 +4,9 @@ namespace App\Tenancy;
 
 use App\Tenancy\Storage\BucketManagers;
 use App\Tenancy\Storage\LocalBucketManager;
+use DateTimeInterface;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\URL;
 use RuntimeException;
 use Stancl\Tenancy\Contracts\TenancyBootstrapper;
 use Stancl\Tenancy\Contracts\Tenant;
@@ -53,6 +55,16 @@ class TenantBucketBootstrapper implements TenancyBootstrapper
         ]);
 
         Storage::forgetDisk($disk);
+
+        if ($manager instanceof LocalBucketManager) {
+            // S3/MinIO sign their own links. Local ones go through a tenant route, signed relative
+            // (path + query) and made absolute with the tenant's own host (Tenant::url()).
+            Storage::disk($disk)->buildTemporaryUrlsUsing(
+                fn (string $path, DateTimeInterface $expiration) => $tenant->url(
+                    URL::temporarySignedRoute('tenant.storage.local', $expiration, ['path' => $path], absolute: false),
+                ),
+            );
+        }
     }
 
     public function revert(): void
