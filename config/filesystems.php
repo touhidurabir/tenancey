@@ -54,7 +54,7 @@ return [
             'key' => env('AWS_ACCESS_KEY_ID'),
             'secret' => env('AWS_SECRET_ACCESS_KEY'),
             'region' => env('AWS_DEFAULT_REGION'),
-            'bucket' => env('AWS_BUCKET'),
+            'bucket' => env('AWS_BUCKET', ''), // '' not null: the S3 client is built without a tenant bucket (bucket managers)
             'url' => env('AWS_URL'),
             'endpoint' => env('AWS_ENDPOINT'),
             'use_path_style_endpoint' => env('AWS_USE_PATH_STYLE_ENDPOINT', false),
@@ -68,7 +68,7 @@ return [
             'key' => env('MINIO_KEY'),
             'secret' => env('MINIO_SECRET'),
             'region' => env('MINIO_REGION', 'us-east-1'),
-            'bucket' => env('MINIO_BUCKET'), // central default; each tenant gets its own (TenantBucketBootstrapper)
+            'bucket' => env('MINIO_BUCKET', ''), // central default ('' not null, see s3); each tenant gets its own (TenantBucketBootstrapper)
             'endpoint' => env('MINIO_ENDPOINT'),
             'use_path_style_endpoint' => true,
             'throw' => true,

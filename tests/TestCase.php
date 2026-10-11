@@ -101,7 +101,7 @@ abstract class TestCase extends BaseTestCase
     }
 
     /**
-     * Drop every database, MySQL user and storage folder carrying the TEST-ONLY tenant prefixes.
+     * Drop every database, MySQL user, storage folder and local bucket carrying the TEST-ONLY tenant prefixes.
      * Runs before and after each test, so a killed run cannot poison the next one.
      */
     protected function dropTestTenantResources(): void
@@ -127,6 +127,15 @@ abstract class TestCase extends BaseTestCase
         foreach (File::directories(storage_path()) as $directory) {
             if (str_starts_with(basename($directory), config('tenancy.filesystem.suffix_base'))) {
                 File::deleteDirectory($directory);
+            }
+        }
+
+        $bucketRoot = config('tenancy.storage.local_root');
+        if (File::isDirectory($bucketRoot)) {
+            foreach (File::directories($bucketRoot) as $directory) {
+                if (str_starts_with(basename($directory), config('tenancy.storage.bucket_prefix'))) {
+                    File::deleteDirectory($directory);
+                }
             }
         }
     }
