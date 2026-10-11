@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Http\Controllers\Tenant\AvatarController;
 use App\Http\Controllers\Tenant\DashboardController;
+use App\Http\Controllers\Tenant\FileController;
 use App\Http\Controllers\Tenant\ImpersonationController;
 use App\Http\Controllers\Tenant\LocalFileController;
 use App\Http\Controllers\Tenant\LoginController;
@@ -62,6 +63,11 @@ Route::middleware([
             Route::get('profile', [AvatarController::class, 'edit'])->name('profile');
             Route::put('profile/avatar', [AvatarController::class, 'update'])->name('profile.avatar');
             Route::delete('profile/avatar', [AvatarController::class, 'destroy']);
+
+            Route::get('files', [FileController::class, 'index'])->name('files.index');
+            Route::post('files', [FileController::class, 'store'])->name('files.store');
+            Route::get('files/{media}/download', [FileController::class, 'download'])->name('files.download');
+            Route::delete('files/{media}', [FileController::class, 'destroy'])->name('files.destroy');
         });
     });
 });
