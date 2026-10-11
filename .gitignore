@@ -15,6 +15,8 @@
 /auth.json
 /node_modules
 /public/build
+/public/build-docker
+/public/build-docker.hot
 /public/fonts-manifest.dev.json
 /public/hot
 /public/storage

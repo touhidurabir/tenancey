@@ -18,6 +18,10 @@
         </include>
     </source>
     <php>
+        <!-- Fixed host names, so link assertions are the same everywhere. <server> (not <env>)
+             because Laravel reads $_SERVER first: it also beats Docker's container environment. -->
+        <server name="APP_URL" value="http://tenancey.test"/>
+        <server name="CENTRAL_DOMAIN" value="tenancey.test"/>
         <env name="APP_ENV" value="testing"/>
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
         <env name="BCRYPT_ROUNDS" value="4"/>

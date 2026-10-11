@@ -194,13 +194,15 @@ class Tenant extends BaseTenant implements TenantWithDatabase
 
     /**
      * Absolute URL on the tenant's subdomain. Use this instead of url() in queued or central
-     * code, where url() would point at the central domain.
+     * code, where url() would point at the central domain. Scheme and port come from APP_URL.
      */
     public function url(string $path = '/'): string
     {
-        $scheme = parse_url((string) config('app.url'), PHP_URL_SCHEME) ?: 'http';
+        $appUrl = (string) config('app.url');
+        $scheme = parse_url($appUrl, PHP_URL_SCHEME) ?: 'http';
+        $port = parse_url($appUrl, PHP_URL_PORT);
 
-        return $scheme.'://'.$this->host().'/'.ltrim($path, '/');
+        return $scheme.'://'.$this->host().($port ? ':'.$port : '').'/'.ltrim($path, '/');
     }
 
     /**
