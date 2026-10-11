@@ -19,6 +19,7 @@
             <span class="font-semibold">{{ tenant('name') }}</span>
             @auth
                 <nav class="flex items-center gap-4 text-sm">
+                    <a href="{{ route('profile') }}" class="text-gray-600 hover:underline">Profile</a>
                     <span class="text-gray-600">{{ auth()->user()->email }}</span>
                     <form method="POST" action="{{ route('logout') }}">
                         @csrf

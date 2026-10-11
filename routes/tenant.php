@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Http\Controllers\Tenant\AvatarController;
 use App\Http\Controllers\Tenant\DashboardController;
 use App\Http\Controllers\Tenant\ImpersonationController;
 use App\Http\Controllers\Tenant\LocalFileController;
@@ -56,5 +57,11 @@ Route::middleware([
         Route::get('dashboard', DashboardController::class)
             ->middleware(EnsurePasswordChanged::class)
             ->name('dashboard');
+
+        Route::middleware(EnsurePasswordChanged::class)->group(function () {
+            Route::get('profile', [AvatarController::class, 'edit'])->name('profile');
+            Route::put('profile/avatar', [AvatarController::class, 'update'])->name('profile.avatar');
+            Route::delete('profile/avatar', [AvatarController::class, 'destroy']);
+        });
     });
 });
