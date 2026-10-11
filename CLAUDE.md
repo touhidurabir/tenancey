@@ -25,6 +25,9 @@ Read the matching doc before changing routes, middleware, queue config, Horizon 
   supervisors vs workers, and the timing rules.
 - `docs/DOCKER.md`: the Docker local-development setup next to Valet: services, ports, how the two
   setups share one folder, daily commands, troubleshooting.
+- `docs/STORAGE.md`: tenant files. Read before changing storage, buckets or medialibrary: the
+  `FILESYSTEM_DISK` setting, one bucket per tenant, the bucket managers and bootstrapper, signed
+  downloads, MinIO on the Mac.
 - `docs/BROADCASTING.md`: live provisioning/teardown over Reverb. Covers the channels, channel
   auth with the `central` guard, the path from a tenant save to the browser, and why the events
   use `ShouldBroadcastNow`.
@@ -37,6 +40,8 @@ Read the matching doc before changing routes, middleware, queue config, Horizon 
   (e.g. `tenant_<uuid>`). This project's tenant databases are `tenancey_{uuid}`
   (`TENANT_DATABASE_PREFIX`). Never drop databases or users by pattern.
 - Redis (local, phpredis) holds queues, cache and sessions. Mail goes over SMTP to HELO on port 2525.
+- MinIO (S3-compatible file storage): API `127.0.0.1:19000`, dashboard `localhost:19001`, run by the
+  launch agent `local.minio` (not `brew services`). Valet's `.env` has `FILESYSTEM_DISK=minio`.
 - Central admin login: `admin@tenancey.test` / `password` (from `DatabaseSeeder`).
 - Horizon and Reverb (WebSockets, port 8081) run under supervisor: `deploy/supervisor/` (README there).
 - **Docker runs side by side** at **http://tenancey.localhost:8000** (`compose.yaml`, guide in
@@ -142,6 +147,15 @@ Read the matching doc before changing routes, middleware, queue config, Horizon 
     blocked.
   - End (or log out, or the session expiring) returns to the central tenant page.
   - Old tokens are pruned by the scheduled `model:prune`, which needs `schedule:run`.
+- **Storage.** One bucket per tenant (`TENANT_BUCKET_PREFIX` + uuid) on the tenant's recorded
+  `storage_disk` (`local` folder, MinIO or S3); details in `docs/STORAGE.md`.
+  - `FILESYSTEM_DISK` only decides the disk of NEW tenants. Existing ones keep theirs.
+  - Buckets are created and deleted only through `App\Tenancy\Storage\BucketManager`, behind
+    `TenantResourceGuard`. Never delete buckets by pattern: the Mac's MinIO is shared.
+  - `App\Tenancy\TenantBucketBootstrapper` points the disk (and medialibrary) at the bucket while
+    tenancy is on. stancl's filesystem bootstrapper no longer touches `local`.
+  - Files are spatie/laravel-medialibrary (`media` is a tenant table). Downloads are 5-minute
+    signed links: S3 presigned, or the `tenant.storage.local` route on `local`.
 - **Links in queued or central code:** use `$tenant->url()`, never `url()`.
 - **Cache isolation comes from the per-tenant Redis prefix.** A non-Redis cache store is shared by
   all tenants.
@@ -187,7 +201,10 @@ vendor/bin/pint --dirty        # format changed PHP files
   can't beat Docker's container env), so link assertions are identical on Valet and in Docker
   (`docker compose exec app php artisan test`).
 - Tests use real MySQL (`tenancey_testing`) and test-only prefixes: `tenanceytest_`, `tx_`,
-  `storage/testtenant_`, and Redis DBs 13–15. All of these are set in `phpunit.xml`.
+  `storage/testtenant_`, `tenanceytest-` buckets (local disk), and Redis DBs 13–15. All of these
+  are set in `phpunit.xml`.
+- `#[Group('minio')]` tests use the real MinIO from `.env` (only `tenanceytest-*` buckets) and are
+  skipped when it isn't running: `php artisan test --group=minio`.
 - `Tests\TestCase` refuses any other database. It uses `DatabaseTruncation` (not `RefreshDatabase`,
   because `CREATE DATABASE` commits the open transaction). It runs the `provisioning` connection
   synchronously, and cleans up test-prefixed tenant resources before and after each test.

@@ -36,13 +36,13 @@ Clone it, set it up, and build your own app on top of it, or read it to see how 
 - **Queued provisioning pipeline** (`Bus::chain`):
   1. Create the database (and, optionally, its user).
   2. Migrate and seed it.
-  3. Prepare storage.
+  3. Prepare storage, and create the tenant's file bucket.
   4. Create the first admin user.
   5. Mark the tenant Ready.
   6. Email the credentials.
 
   Every step is idempotent, and a failed run can be retried from the admin UI.
-- **Queued teardown** drops the database, the user, storage and Redis keys, then soft-deletes the
+- **Queued teardown** drops the database, the user, storage, the bucket and Redis keys, then soft-deletes the
   row. The soft-deleted row is the record, so its subdomain stays reserved.
 - **Tenant lifecycle:** `enabled` (the admin's on/off switch) plus `state` (Provisioning, Ready,
   Failed, Deleting, Deleted). Users get in only when the tenant is enabled **and** Ready.
@@ -63,6 +63,9 @@ Clone it, set it up, and build your own app on top of it, or read it to see how 
   - Provisioning and teardown write to a daily `tenancy` log.
   - Each line is tagged with the tenant uuid, the run and the step.
   - Read the logs in [log-viewer](https://github.com/opcodesio/log-viewer) at `/log-viewer`.
+- **One file bucket per tenant**, chosen by one setting: `FILESYSTEM_DISK` = `local`, `minio` or
+  `s3`. Tenant users get an avatar and "My files" (spatie/laravel-medialibrary), downloaded through
+  5-minute signed links.
 - **Horizon** runs the queues, with separate tenant-aware, central and provisioning connections.
 - **Feature tests** run against real MySQL and provision real tenant databases.
 
@@ -70,7 +73,7 @@ Clone it, set it up, and build your own app on top of it, or read it to see how 
 
 | Requirement | Version | Notes |
 |---|---|---|
-| PHP | **8.3+** (developed on 8.4) | Extensions: `pdo_mysql`, `redis` (phpredis), `pcntl` and `posix` (for Horizon), `mbstring`, `openssl`, `tokenizer`, `xml`, `ctype`, `fileinfo`, `intl` (recommended) |
+| PHP | **8.4+** | Extensions: `pdo_mysql`, `redis` (phpredis), `pcntl` and `posix` (for Horizon), `mbstring`, `openssl`, `tokenizer`, `xml`, `ctype`, `fileinfo`, `exif` and `gd` (for medialibrary and its thumbnails), `intl` (recommended) |
 | Composer | 2.x | |
 | Laravel | 13.x | Installed by Composer |
 | stancl/tenancy | 3.10.1+ | The first v3 release that supports Laravel 13 |
@@ -81,6 +84,7 @@ Clone it, set it up, and build your own app on top of it, or read it to see how 
 | A web server that serves wildcard subdomains | | Locally: [Laravel Valet](https://laravel.com/docs/valet) or [Herd](https://herd.laravel.com) on macOS. Elsewhere: nginx or Apache with wildcard DNS |
 | A process supervisor | | [Supervisor](http://supervisord.org/) runs Horizon. Without Horizon, nothing is ever provisioned |
 | SMTP catcher (dev) | | Mailpit, HELO, Mailtrap, or `MAIL_MAILER=log` |
+| File storage | | Local folders, or any S3-compatible service: [MinIO](https://min.io) locally, Amazon S3 in production. See [docs/STORAGE.md](docs/STORAGE.md) |
 
 `php artisan serve` is **not enough**: it cannot serve `*.yourapp.test` subdomains, so tenants
 would be unreachable.
@@ -173,7 +177,33 @@ stay in "Provisioning" forever.
 
 Run only one Horizon at a time.
 
-### 7. Try it
+### 7. File storage (local or MinIO)
+
+`FILESYSTEM_DISK=local` needs nothing more: each tenant's files go to a folder under
+`storage/app/buckets/`. To use MinIO (S3-compatible) instead:
+
+1. `brew install minio`. **Don't** start it with `brew services`: brew runs it on port 9000,
+   which Homebrew PHP-FPM's default pool already holds. Use a launch agent on ports 19000
+   (API) and 19001 (dashboard) instead; [docs/STORAGE.md](docs/STORAGE.md#5-minio-on-the-mac)
+   has the commands.
+2. In `.env`:
+
+   ```dotenv
+   FILESYSTEM_DISK=minio
+   MINIO_ENDPOINT=http://127.0.0.1:19000
+   MINIO_KEY=minioadmin
+   MINIO_SECRET=minioadmin
+   MINIO_REGION=us-east-1
+   TENANT_BUCKET_PREFIX=tenancey-     # buckets are {prefix}{uuid}; must be globally unique on S3
+   ```
+
+3. Restart Horizon (`php artisan horizon:terminate`). New tenants get a MinIO bucket; existing
+   ones keep the disk they were created with.
+
+Tenants created before buckets existed: run `php artisan tenants:create-buckets` once.
+In production, set `FILESYSTEM_DISK=s3` and the `AWS_*` keys.
+
+### 8. Try it
 
 1. Open http://tenancey.test and sign in as `admin@tenancey.test` / `password`.
 2. Create a tenant, for example subdomain `acme`. The tenant page shows each provisioning step as
@@ -189,7 +219,7 @@ Other central pages:
 | Logs | http://tenancey.test/log-viewer |
 | Audit log | http://tenancey.test/audit |
 
-### 8. Scheduler (optional locally, needed in production)
+### 9. Scheduler (optional locally, needed in production)
 
 Expired impersonation tokens are pruned by the scheduled `model:prune`:
 
@@ -264,6 +294,7 @@ prefixes. The settings are in `phpunit.xml`:
 | Tenant database prefix | `tenanceytest_` |
 | Tenant DB user prefix | `tx_` |
 | Redis databases | 13–15 |
+| Tenant bucket prefix | `tenanceytest-` |
 
 Create the test database once, then run the suite:
 
@@ -275,11 +306,15 @@ php artisan test
 The test case refuses to run against any other database. It cleans up the test-prefixed tenant
 resources before and after each test.
 
+The `minio` group (`php artisan test --group=minio`) talks to the MinIO in `.env` and is skipped
+when MinIO isn't running.
+
 ## How it fits together
 
 | Read this | For |
 |---|---|
 | [docs/ROUTING.md](docs/ROUTING.md) | Central vs tenant routing: how `acme.tenancey.test` becomes a tenant, the middleware chain, the bootstrappers, and sessions |
+| [docs/STORAGE.md](docs/STORAGE.md) | File storage: `FILESYSTEM_DISK`, one bucket per tenant, signed downloads, MinIO on the Mac, S3 in production |
 | [docs/QUEUES.md](docs/QUEUES.md) | Driver vs queue connection vs queue, the Redis connections, Horizon supervisors and workers, and timeouts |
 | [deploy/supervisor/README.md](deploy/supervisor/README.md) | Running Horizon under Supervisor |
 | [docs/superpowers/specs/](docs/superpowers/specs/) | The original design for tenant bootstrapping |
