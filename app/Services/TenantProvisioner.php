@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\TenantState;
 use App\Jobs\Provisioning\CreateFirstTenantUser;
+use App\Jobs\Provisioning\CreateTenantBucket;
 use App\Jobs\Provisioning\CreateTenantDatabase;
 use App\Jobs\Provisioning\CreateTenantDatabaseUser;
 use App\Jobs\Provisioning\MarkTenantReady;
@@ -41,6 +42,7 @@ class TenantProvisioner
         MigrateTenantDatabase::class,
         SeedTenantDatabase::class,
         PrepareTenantStorage::class,
+        CreateTenantBucket::class,
         CreateFirstTenantUser::class,
         MarkTenantReady::class,
         SendTenantCredentials::class,
