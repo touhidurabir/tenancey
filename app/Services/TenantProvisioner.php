@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\TenantState;
 use App\Jobs\Provisioning\CreateFirstTenantUser;
+use App\Jobs\Provisioning\CreateTenantBucket;
 use App\Jobs\Provisioning\CreateTenantDatabase;
 use App\Jobs\Provisioning\CreateTenantDatabaseUser;
 use App\Jobs\Provisioning\MarkTenantReady;
@@ -15,6 +16,7 @@ use App\Jobs\TenantJob;
 use App\Models\Tenant;
 use App\Tenancy\Database\DatabaseCredentials;
 use App\Tenancy\Database\DatabaseUserManager;
+use App\Tenancy\Storage\BucketManagers;
 use App\Tenancy\TenantResourceGuard;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Context;
@@ -41,6 +43,7 @@ class TenantProvisioner
         MigrateTenantDatabase::class,
         SeedTenantDatabase::class,
         PrepareTenantStorage::class,
+        CreateTenantBucket::class,
         CreateFirstTenantUser::class,
         MarkTenantReady::class,
         SendTenantCredentials::class,
@@ -65,6 +68,10 @@ class TenantProvisioner
     public function provision(array $data): Tenant
     {
         $dedicated = (bool) ($data['dedicated_db_user'] ?? false);
+
+        // A tenant recorded on a disk we can't make buckets on could never be torn down: refuse it
+        // before the row exists (e.g. a typo in FILESYSTEM_DISK).
+        BucketManagers::forDisk((string) config('filesystems.default'));
 
         // Generate before the transaction: it reads the database server's user list.
         $dbUsername = $dedicated ? (filled($data['db_username'] ?? null) ? $data['db_username'] : DatabaseCredentials::generateUsername(app(DatabaseUserManager::class))) : null;
@@ -92,6 +99,8 @@ class TenantProvisioner
             // Without a dedicated user the master user IS the connection, so it has access.
             $tenant->db_master_access = $dedicated ? (bool) ($data['db_master_access'] ?? true) : true;
             $tenant->storage_path = TenantResourceGuard::storagePathFor($tenant->uuid);
+            $tenant->storage_disk = config('filesystems.default');
+            $tenant->storage_bucket = TenantResourceGuard::bucketNameFor($tenant->uuid);
             $tenant->cache_prefix = config('tenancy.database.prefix').$tenant->uuid.':';
             $tenant->save();
 

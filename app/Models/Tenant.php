@@ -34,6 +34,8 @@ use Stancl\Tenancy\Events;
  * @property bool $db_master_access
  * @property Carbon|null $db_user_created_at
  * @property string $storage_path
+ * @property string|null $storage_disk
+ * @property string|null $storage_bucket
  * @property string $cache_prefix
  * @property array{name: string, email: string, phone: ?string, password: string, must_change_password?: bool}|null $pending_admin
  * @property string|null $current_step
@@ -125,6 +127,8 @@ class Tenant extends BaseTenant implements TenantWithDatabase
             'db_master_access',
             'db_user_created_at',
             'storage_path',
+            'storage_disk',
+            'storage_bucket',
             'cache_prefix',
             'pending_admin',
             'current_step',

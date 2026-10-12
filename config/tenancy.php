@@ -5,6 +5,9 @@ declare(strict_types=1);
 use App\Models\Tenant;
 use App\Tenancy\Database\MySqlDatabaseUserManager;
 use App\Tenancy\SpatiePermissionsBootstrapper;
+use App\Tenancy\Storage\LocalBucketManager;
+use App\Tenancy\Storage\S3BucketManager;
+use App\Tenancy\TenantBucketBootstrapper;
 use App\Tenancy\TenantRedisBootstrapper;
 use Stancl\Tenancy\Bootstrappers\DatabaseTenancyBootstrapper;
 use Stancl\Tenancy\Bootstrappers\FilesystemTenancyBootstrapper;
@@ -42,6 +45,7 @@ return [
         // connections (sessions + cache) with the tenant's own `cache_prefix` column.
         TenantRedisBootstrapper::class,
         FilesystemTenancyBootstrapper::class,
+        TenantBucketBootstrapper::class,
         QueueTenancyBootstrapper::class,
         SpatiePermissionsBootstrapper::class,
         // Stancl\Tenancy\Bootstrappers\RedisTenancyBootstrapper::class, // Note: phpredis is needed
@@ -140,8 +144,8 @@ return [
          * Each disk listed in the 'disks' array will be suffixed by the suffix_base, followed by the tenant_id.
          */
         'suffix_base' => env('TENANT_STORAGE_PREFIX', 'tenant_'), // storage/tenant_{id}
+        // 'local' is TenantBucketBootstrapper's (one bucket per tenant on every driver).
         'disks' => [
-            'local',
             'public',
             // 's3',
         ],
@@ -153,7 +157,6 @@ return [
          */
         'root_override' => [
             // Disks whose roots should be overridden after storage_path() is suffixed.
-            'local' => '%storage_path%/app/',
             'public' => '%storage_path%/app/public/',
         ],
 
@@ -177,6 +180,20 @@ return [
          */
         // Keep asset() central so Vite's /build assets load on tenant subdomains.
         'asset_helper_tenancy' => false,
+    ],
+
+    /**
+     * One storage bucket per tenant on the tenant's recorded disk (tenants.storage_disk):
+     * a real bucket on S3/MinIO, a folder under local_root on `local`.
+     * See docs/superpowers/specs/2026-10-11-tenant-storage-buckets-design.md.
+     */
+    'storage' => [
+        'bucket_prefix' => env('TENANT_BUCKET_PREFIX', 'tenancey-'),
+        'local_root' => storage_path('app/buckets'), // read before tenancy: the central storage path
+        'bucket_managers' => [ // keyed by the disk's DRIVER
+            'local' => LocalBucketManager::class,
+            's3' => S3BucketManager::class,
+        ],
     ],
 
     /**

@@ -26,14 +26,16 @@
         "source": "https://github.com/touhidurabir/tenancey"
     },
     "require": {
-        "php": "^8.3",
+        "php": "^8.4",
         "ext-pdo_mysql": "*",
         "ext-redis": "*",
         "laravel/framework": "^13.17",
         "laravel/horizon": "^5.50",
         "laravel/reverb": "^1.0",
         "laravel/tinker": "^3.0",
+        "league/flysystem-aws-s3-v3": "^3.0",
         "opcodesio/log-viewer": "^3.24",
+        "spatie/laravel-medialibrary": "^11.23",
         "spatie/laravel-permission": "^8.3",
         "stancl/tenancy": "^3.10"
     },

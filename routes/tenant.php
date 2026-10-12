@@ -2,8 +2,11 @@
 
 declare(strict_types=1);
 
+use App\Http\Controllers\Tenant\AvatarController;
 use App\Http\Controllers\Tenant\DashboardController;
+use App\Http\Controllers\Tenant\FileController;
 use App\Http\Controllers\Tenant\ImpersonationController;
+use App\Http\Controllers\Tenant\LocalFileController;
 use App\Http\Controllers\Tenant\LoginController;
 use App\Http\Controllers\Tenant\PasswordController;
 use App\Http\Middleware\EnsurePasswordChanged;
@@ -34,6 +37,12 @@ Route::middleware([
         ->where('token', '[A-Za-z0-9]{64}')
         ->name('impersonate');
 
+    // Temporary links to files on the `local` disk (TenantBucketBootstrapper signs them).
+    Route::get('storage/local/{path}', LocalFileController::class)
+        ->middleware('signed:relative')
+        ->where('path', '.*')
+        ->name('tenant.storage.local');
+
     Route::middleware('guest')->group(function () {
         Route::get('login', [LoginController::class, 'create'])->name('login');
         Route::post('login', [LoginController::class, 'store']);
@@ -49,5 +58,16 @@ Route::middleware([
         Route::get('dashboard', DashboardController::class)
             ->middleware(EnsurePasswordChanged::class)
             ->name('dashboard');
+
+        Route::middleware(EnsurePasswordChanged::class)->group(function () {
+            Route::get('profile', [AvatarController::class, 'edit'])->name('profile');
+            Route::put('profile/avatar', [AvatarController::class, 'update'])->name('profile.avatar');
+            Route::delete('profile/avatar', [AvatarController::class, 'destroy']);
+
+            Route::get('files', [FileController::class, 'index'])->name('files.index');
+            Route::post('files', [FileController::class, 'store'])->name('files.store');
+            Route::get('files/{media}/download', [FileController::class, 'download'])->name('files.download');
+            Route::delete('files/{media}', [FileController::class, 'destroy'])->name('files.destroy');
+        });
     });
 });

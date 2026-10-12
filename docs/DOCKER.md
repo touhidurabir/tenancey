@@ -11,6 +11,7 @@ but each has its own database, Redis, mail catcher and built assets.
 | Redis | Mac, `127.0.0.1:6379` | container `redis` (not published) |
 | Mail | HELO, port 2525 | container `mailpit`, inbox at `http://localhost:8025` |
 | Reverb | supervisor, port 8081 | container `reverb`, from the browser at `localhost:8082` |
+| File storage (new tenants) | the Mac's MinIO, `127.0.0.1:19000` (dashboard `localhost:19001`) | container `minio`, from the Mac at `localhost:19010` (dashboard `localhost:19011`) |
 | Built assets | `public/build` | `public/build-docker` |
 
 Browsers resolve every `*.localhost` name to the machine itself, so the Docker URLs need no DNS
@@ -51,6 +52,7 @@ To try a Docker-style build on the Mac: `ASSET_BUILD_DIRECTORY=build-docker npm 
 One image, `tenancey-php:dev`, runs all four PHP services (`app`, `horizon`, `reverb`,
 `scheduler`). It is `php:8.4-fpm` plus:
 - extensions `pdo_mysql`, `pcntl` (bundled) and `redis` 6.3.0 (PECL); `posix` is built in;
+- `gd` (JPEG, PNG, WebP, FreeType) and `exif`, for medialibrary's thumbnails;
 - `git`, `unzip` and Composer 2;
 - `docker/php/php.ini`, loaded last as `zz-tenancey.ini` (512M memory, errors shown).
 
@@ -74,8 +76,9 @@ Rebuild after changing anything in `docker/php/`.
   `tenancey` and `tenancey_testing`.
 - Containers reach each other by **service name** on the `tenancey_default` network. Inside a
   container, `127.0.0.1` is the container itself.
-- `docker compose down` keeps the data. `docker compose down -v` deletes Docker's MySQL and Redis
-  data (every Docker tenant); delete tenants in the UI first, as with `migrate:fresh` on Valet.
+- `docker compose down` keeps the data. `docker compose down -v` deletes Docker's MySQL, Redis and
+  MinIO data (every Docker tenant, and their buckets); delete tenants in the UI first, as with
+  `migrate:fresh` on Valet.
 
 ```bash
 docker compose exec mysql mysql -uroot -pdocker -e 'SHOW DATABASES'
@@ -95,6 +98,9 @@ browser → Mac :8000 → nginx (:80) ─ static file in public/? serve it
 - nginx (`docker/nginx/default.conf`) answers every host name (`server_name _`); Laravel tells
   central and tenants apart by the Host header. It mounts only `public/`, read-only, at the same
   path as in `app`.
+- nginx finds `app` by name through Docker's DNS server (`resolver 127.0.0.11 valid=10s`, and
+  `fastcgi_pass` through a variable), per request rather than once at start. A recreated `app`
+  gets a new IP; without this, nginx kept the old one and answered 502 until restarted.
 - The project is bind-mounted into `app`: code changes apply on the next request, no rebuild.
 
 ```bash
@@ -172,6 +178,45 @@ docker compose exec scheduler php artisan schedule:test   # run one task now
 # no restart needed after editing routes/console.php: each minute's schedule:run is a new PHP process
 ```
 
+## File storage (MinIO)
+
+Docker's new tenants get a bucket on the `minio` container (`FILESYSTEM_DISK: minio` in
+`compose.yaml`). Tenants created before that keep their recorded disk (`local`, folders under
+`storage/app/buckets/`), and keep working. Valet's `.env` still points at the Mac's MinIO: the
+container settings win in Docker only.
+
+**One MinIO, two addresses.** PHP in a container reaches MinIO by its service name
+(`http://minio:9000`, `MINIO_ENDPOINT`). The browser on the Mac reaches it through the published
+port (`http://localhost:19010`, `MINIO_PUBLIC_ENDPOINT`). A download link's signature covers the
+host, so the host can't be swapped afterwards (MinIO answers `SignatureDoesNotMatch`). With
+`MINIO_PUBLIC_ENDPOINT` set, links are signed for that address
+(`App\Tenancy\Storage\PublicLinkS3Adapter`), and everything else keeps using `MINIO_ENDPOINT`.
+On Valet it's unset: both are `127.0.0.1:19000`.
+
+**The `minio` service.**
+- **Image:** `cgr.dev/chainguard/minio`, pinned by digest. MinIO no longer publishes free images,
+  and Chainguard's free tier only has `:latest`. To upgrade, look up the new digest with
+  `docker buildx imagetools inspect cgr.dev/chainguard/minio:latest` and replace it.
+- **Ports:** API `localhost:19010`, dashboard **http://localhost:19011** (`minioadmin` /
+  `minioadmin`). The Mac's own MinIO keeps 19000/19001.
+- **Data:** the named volume `minio-data`. It survives `down` and is erased by `down -v`.
+- **No healthcheck:** the image is distroless (no shell, no `curl`, no `mc`), so nothing can run
+  inside it, and `docker compose exec minio sh` fails. Check it from the Mac instead:
+  `curl -s -o /dev/null -w '%{http_code}\n' http://localhost:19010/minio/health/live` → `200`.
+- **Admin work** (e.g. deleting a bucket by hand): the free dashboard only browses files. Use
+  `mc` from its own image, on the project's network:
+  `docker run --rm --network tenancey_default -e MC_HOST_dock=http://minioadmin:minioadmin@minio:9000 cgr.dev/chainguard/minio-client:latest ls dock`.
+  Never delete `tenancey-*` buckets by hand: tenant teardown does that.
+
+**Upgrading an existing Docker database** (made before tenant buckets existed):
+```bash
+docker compose up -d                                         # new settings for the PHP services
+docker compose exec app php artisan migrate                  # storage_disk/storage_bucket; old tenants recorded as local
+docker compose exec app php artisan tenants:migrate          # the media table in every tenant
+docker compose exec app php artisan tenants:create-buckets   # bucket folders for old tenants
+docker compose restart horizon                               # job code changed since it started
+```
+
 ## Running the tests
 
 ```bash
@@ -182,6 +227,12 @@ docker compose exec app php artisan test --compact
   requests, so the names don't have to be reachable from Docker.
 - `<server>` writes `$_SERVER`, which Laravel reads first. That's why it wins over the
   container's environment, where `<env>` entries can't.
+- `FILESYSTEM_DISK` is a `<server>` entry for the same reason: `compose.yaml` sets it to `minio`,
+  and the tests expect `local` (they make bucket folders under `storage/app/buckets/`).
+- `#[Group('minio')]` tests use Docker's MinIO (`minio:9000`, only `tenanceytest-*` buckets):
+  `docker compose exec app php artisan test --compact --group=minio`. The host test in
+  `PublicEndpointSigningTest` is skipped in Docker: it needs the Mac's MinIO, reachable as both
+  `127.0.0.1` and `localhost`.
 - Everything else comes from `phpunit.xml` as on Valet: the `tenancey_testing` database (created
   by `docker/mysql/init/`), the test prefixes, and Redis DBs 13–15, all in Docker's MySQL and
   Redis.
@@ -211,16 +262,18 @@ docker compose down                             # remove the containers and netw
 
 ### Resetting Docker's data
 
-**Delete Docker's tenants in the UI first.** Their storage folders live in the shared
-`storage/` folder on the Mac, and only a teardown removes them. Then:
+**Delete Docker's tenants in the UI first.** Their storage folders (and the bucket folders of
+tenants recorded on `local`) live in the shared `storage/` folder on the Mac, and only a teardown
+removes them. MinIO buckets would go with the volume, but a teardown keeps everything consistent.
+Then:
 ```bash
-docker compose down -v      # also deletes the tenancey_* volumes: Docker's MySQL, Redis and node_modules
+docker compose down -v      # also deletes the tenancey_* volumes: Docker's MySQL, Redis, MinIO and node_modules
 docker compose up -d
 docker compose exec app php artisan migrate --seed --no-interaction
 docker compose run --rm node
 ```
-`-v` only deletes this project's named volumes. Valet's MySQL, Redis and the Mac's
-`node_modules` are never touched.
+`-v` only deletes this project's named volumes. Valet's MySQL, Redis, the Mac's MinIO and the
+Mac's `node_modules` are never touched.
 
 ## Troubleshooting
 

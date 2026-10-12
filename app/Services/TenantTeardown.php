@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Enums\TenantState;
+use App\Jobs\Teardown\DeleteTenantBucket;
 use App\Jobs\Teardown\DeleteTenantStorage;
 use App\Jobs\Teardown\DropTenantDatabase;
 use App\Jobs\Teardown\DropTenantDatabaseUser;
@@ -32,6 +33,7 @@ class TenantTeardown
         DropTenantDatabase::class,
         DropTenantDatabaseUser::class,
         DeleteTenantStorage::class,
+        DeleteTenantBucket::class,
         FlushTenantCache::class,
         SoftDeleteTenant::class,
     ];
