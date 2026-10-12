@@ -99,6 +99,21 @@ services:
       - "8025:8025" # web inbox: http://localhost:8025 (SMTP 1025 stays inside the network)
     restart: unless-stopped
 
+  minio:
+    # Chainguard's free tier only publishes :latest, so pin the digest (:latest on 2026-10-12).
+    image: cgr.dev/chainguard/minio@sha256:dc455cdd4db6e390b1b26514f15ff37681a777bf8dab41aac445a0259f751e56
+    command: server /data --console-address :9001 # the image's entrypoint is `minio`
+    environment:
+      MINIO_ROOT_USER: minioadmin # local dev only, like MySQL's password
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "19010:9000" # S3 API: signed links in the browser go to localhost:19010
+      - "19011:9001" # dashboard: http://localhost:19011 (the Mac's MinIO keeps 19000/19001)
+    volumes:
+      - minio-data:/data
+    # No healthcheck: the image has no shell or client to run one (check from the Mac with curl).
+    restart: unless-stopped
+
   # One-off asset build: docker compose run --rm node
   node:
     image: node:22.12-bookworm-slim
@@ -118,3 +133,4 @@ volumes:
   mysql-data:
   redis-data:
   node-modules:
+  minio-data:

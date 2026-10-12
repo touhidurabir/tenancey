@@ -186,6 +186,17 @@ host, so the host can't be swapped afterwards (MinIO answers `SignatureDoesNotMa
 (`App\Tenancy\Storage\PublicLinkS3Adapter`), and everything else keeps using `MINIO_ENDPOINT`.
 On Valet it's unset: both are `127.0.0.1:19000`.
 
+**The `minio` service.**
+- **Image:** `cgr.dev/chainguard/minio`, pinned by digest. MinIO no longer publishes free images,
+  and Chainguard's free tier only has `:latest`. To upgrade, look up the new digest with
+  `docker buildx imagetools inspect cgr.dev/chainguard/minio:latest` and replace it.
+- **Ports:** API `localhost:19010`, dashboard **http://localhost:19011** (`minioadmin` /
+  `minioadmin`). The Mac's own MinIO keeps 19000/19001.
+- **Data:** the named volume `minio-data`. It survives `down` and is erased by `down -v`.
+- **No healthcheck:** the image is distroless (no shell, no `curl`, no `mc`), so nothing can run
+  inside it, and `docker compose exec minio sh` fails. Check it from the Mac instead:
+  `curl -s -o /dev/null -w '%{http_code}\n' http://localhost:19010/minio/health/live` → `200`.
+
 ## Running the tests
 
 ```bash
