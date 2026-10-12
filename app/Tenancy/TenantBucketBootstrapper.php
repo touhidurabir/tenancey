@@ -4,6 +4,7 @@ namespace App\Tenancy;
 
 use App\Tenancy\Storage\BucketManagers;
 use App\Tenancy\Storage\LocalBucketManager;
+use App\Tenancy\Storage\PublicLinkS3Adapter;
 use DateTimeInterface;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
@@ -74,6 +75,10 @@ class TenantBucketBootstrapper implements TenancyBootstrapper
                     URL::temporarySignedRoute('tenant.storage.local', $expiration, ['path' => $path, 'tenant' => $tenant->getTenantKey()], absolute: false),
                 ),
             );
+        } elseif (filled(config("filesystems.disks.{$disk}.public_endpoint"))) {
+            // The browser reaches S3/MinIO under another name than PHP does (Docker): sign links
+            // for the browser's name. revert() forgets the disk, which drops this instance.
+            Storage::set($disk, PublicLinkS3Adapter::from(Storage::disk($disk)));
         }
     }
 

@@ -172,6 +172,19 @@ docker compose exec scheduler php artisan schedule:test   # run one task now
 # no restart needed after editing routes/console.php: each minute's schedule:run is a new PHP process
 ```
 
+## File storage (MinIO)
+
+Being added one part at a time (phase 2 of `docs/STORAGE.md`). Until it's done, Docker stays on
+`FILESYSTEM_DISK: local`.
+
+**One MinIO, two addresses.** PHP in a container reaches MinIO by its service name
+(`http://minio:9000`, `MINIO_ENDPOINT`). The browser on the Mac reaches it through the published
+port (`http://localhost:19010`, `MINIO_PUBLIC_ENDPOINT`). A download link's signature covers the
+host, so the host can't be swapped afterwards (MinIO answers `SignatureDoesNotMatch`). With
+`MINIO_PUBLIC_ENDPOINT` set, links are signed for that address
+(`App\Tenancy\Storage\PublicLinkS3Adapter`), and everything else keeps using `MINIO_ENDPOINT`.
+On Valet it's unset: both are `127.0.0.1:19000`.
+
 ## Running the tests
 
 ```bash

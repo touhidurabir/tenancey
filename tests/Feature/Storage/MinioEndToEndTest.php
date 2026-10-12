@@ -25,6 +25,9 @@ class MinioEndToEndTest extends TestCase
         $this->deleteTestBucketsOnMinio();
         Mail::fake();
         config()->set('filesystems.default', 'minio'); // new tenants go to MinIO
+        // Sign for the endpoint PHP itself uses: in Docker the public one (localhost:19010) is the
+        // container itself. PublicEndpointSigningTest covers public signing.
+        config()->set('filesystems.disks.minio.public_endpoint', null);
     }
 
     protected function tearDown(): void

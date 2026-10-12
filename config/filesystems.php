@@ -70,6 +70,7 @@ return [
             'region' => env('MINIO_REGION', 'us-east-1'),
             'bucket' => env('MINIO_BUCKET', ''), // central default ('' not null, see s3); each tenant gets its own (TenantBucketBootstrapper)
             'endpoint' => env('MINIO_ENDPOINT'),
+            'public_endpoint' => env('MINIO_PUBLIC_ENDPOINT'), // the browser's address for signed links; unset = endpoint (Valet)
             'use_path_style_endpoint' => true,
             'throw' => true,
             'report' => false,

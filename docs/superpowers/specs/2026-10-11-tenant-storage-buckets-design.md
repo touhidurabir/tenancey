@@ -209,6 +209,26 @@ written to the `tenancy` log channel with tenant uuid and media id (no file cont
 - PHP image: add `gd` (with jpeg, png, webp, freetype) and `exif`; nginx
   `client_max_body_size 12m`; `php.ini` `upload_max_filesize 10M`, `post_max_size 12M`.
 
+### Refinements (2026-10-12, phase 2 plan)
+
+1. **Upload limits are already enough.** `docker/php/php.ini` has `upload_max_filesize` and
+   `post_max_size` at 20M, and nginx `client_max_body_size 20M`, above the app's 10 MB. The
+   12m/10M/12M values above are not applied.
+2. **No healthcheck on `minio`.** The image is distroless (no shell, `curl` or `mc`), and nothing
+   needs MinIO at boot. PHP services wait for `service_started`; health is checked from the Mac
+   with `curl http://localhost:19010/minio/health/live`.
+3. **Laravel's `temporary_url` disk option is not used:** it swaps the host after signing, which
+   breaks the signature. `App\Tenancy\Storage\S3PublicUrlSigner` signs with a second client
+   built on `public_endpoint`. `AwsS3V3Adapter::temporaryUrl()` ignores
+   `buildTemporaryUrlsUsing()`, so `TenantBucketBootstrapper` installs
+   `App\Tenancy\Storage\PublicLinkS3Adapter` (a subclass that signs through it) with
+   `Storage::set()` while tenancy is on.
+4. **`MinioEndToEndTest` signs for the internal endpoint** (it clears `public_endpoint`): inside a
+   container `localhost:19010` is the container itself. `PublicEndpointSigningTest` pins public
+   signing.
+5. **The upgrade steps** for existing databases (`migrate`, `tenants:migrate`,
+   `tenants:create-buckets`) are documented in phase 2's Docker switch.
+
 ## 10. Production notes (docs only)
 - An IAM key limited to `arn:aws:s3:::<prefix>*` with `s3:CreateBucket`, `s3:DeleteBucket`,
   `s3:ListBucket`, `s3:ListBucketVersions`, `s3:GetObject`, `s3:PutObject`, `s3:DeleteObject`,
