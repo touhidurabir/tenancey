@@ -51,6 +51,7 @@ To try a Docker-style build on the Mac: `ASSET_BUILD_DIRECTORY=build-docker npm 
 One image, `tenancey-php:dev`, runs all four PHP services (`app`, `horizon`, `reverb`,
 `scheduler`). It is `php:8.4-fpm` plus:
 - extensions `pdo_mysql`, `pcntl` (bundled) and `redis` 6.3.0 (PECL); `posix` is built in;
+- `gd` (JPEG, PNG, WebP, FreeType) and `exif`, for medialibrary's thumbnails;
 - `git`, `unzip` and Composer 2;
 - `docker/php/php.ini`, loaded last as `zz-tenancey.ini` (512M memory, errors shown).
 

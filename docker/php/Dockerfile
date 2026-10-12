@@ -15,6 +15,14 @@ RUN docker-php-ext-install pdo_mysql pcntl
 RUN pecl install redis-6.3.0 \
     && docker-php-ext-enable redis
 
+# gd (thumbnails: JPEG, PNG, WebP, FreeType) and exif (photo orientation) for medialibrary.
+# The -dev packages bring the libraries gd is compiled against (and needs at runtime).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libjpeg62-turbo-dev libpng-dev libwebp-dev libfreetype-dev \
+    && docker-php-ext-configure gd --with-jpeg --with-webp --with-freetype \
+    && docker-php-ext-install gd exif \
+    && rm -rf /var/lib/apt/lists/*
+
 # Copy the composer binary out of the official Composer image.
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 ENV COMPOSER_ALLOW_SUPERUSER=1
