@@ -32,8 +32,16 @@ files.
 - **Recorded on the tenant row:** `storage_disk` and `storage_bucket`. A tenant keeps the disk it
   was created with, so **changing `FILESYSTEM_DISK` only affects new tenants**. Old ones keep
   working on their recorded disk. Moving a tenant's files between disks is not built.
-- **Tenants made before buckets existed:** `php artisan tenants:create-buckets` creates any missing
-  bucket for every live tenant. Safe to re-run.
+- **Upgrading an install made before buckets existed**, in this order:
+  1. `php artisan migrate`: adds `storage_disk`/`storage_bucket`; existing tenants are recorded
+     on `local`.
+  2. `php artisan tenants:migrate`: the `media` table in every tenant database.
+  3. `php artisan tenants:create-buckets`: creates any missing bucket for every live tenant. Safe
+     to re-run.
+  4. Restart Horizon (`php artisan horizon:terminate`).
+
+  In Docker, prefix each with `docker compose exec app` and restart with
+  `docker compose restart horizon` (`docs/DOCKER.md`).
 
 ## 3. The pieces
 
@@ -99,8 +107,11 @@ curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:19000/minio/health/liv
 The Mac's MinIO may be shared with other projects: **never delete buckets by pattern**, except
 the tests' `tenanceytest-*`.
 
-**Docker** stays on `local` for now (`FILESYSTEM_DISK: local` in `compose.yaml`): `.env`'s
-`127.0.0.1:19000` means the container itself inside Docker. MinIO in Docker is phase 2.
+**Docker** has its own MinIO, the `minio` container: API `localhost:19010`, dashboard
+**http://localhost:19011** (`minioadmin` / `minioadmin`), data in the `minio-data` volume.
+`compose.yaml` sets `FILESYSTEM_DISK: minio`, `MINIO_ENDPOINT: http://minio:9000` (what PHP uses)
+and `MINIO_PUBLIC_ENDPOINT: http://localhost:19010` (what links are signed for: a signature covers
+the host, and the browser can't reach `minio`). Details in `docs/DOCKER.md`.
 
 ## 6. Tests
 

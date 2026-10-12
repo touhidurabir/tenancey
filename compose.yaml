@@ -21,7 +21,11 @@ x-laravel-env: &laravel-env
   REVERB_SERVER_HOST: 0.0.0.0
   REVERB_SERVER_PORT: "8080"
   ASSET_BUILD_DIRECTORY: build-docker
-  FILESYSTEM_DISK: local # MinIO in Docker comes in phase 2: .env's 127.0.0.1:19000 isn't reachable from a container
+  FILESYSTEM_DISK: minio # new tenants; existing ones keep the disk they were created on
+  MINIO_ENDPOINT: http://minio:9000 # PHP containers reach MinIO by its service name
+  MINIO_PUBLIC_ENDPOINT: http://localhost:19010 # signed links are opened by the browser on the Mac
+  MINIO_KEY: minioadmin
+  MINIO_SECRET: minioadmin
 
 # Shared by the four PHP services: same image, same code, same settings.
 x-php: &php
@@ -35,6 +39,8 @@ x-php: &php
       condition: service_healthy
     redis:
       condition: service_started
+    minio:
+      condition: service_started # no healthcheck to wait for (see the service)
   restart: unless-stopped
 
 services:

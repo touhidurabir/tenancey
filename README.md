@@ -200,7 +200,9 @@ Run only one Horizon at a time.
 3. Restart Horizon (`php artisan horizon:terminate`). New tenants get a MinIO bucket; existing
    ones keep the disk they were created with.
 
-Tenants created before buckets existed: run `php artisan tenants:create-buckets` once.
+Upgrading an install made before buckets existed: run `php artisan migrate`, then
+`php artisan tenants:migrate`, then `php artisan tenants:create-buckets` (safe to re-run), and
+restart Horizon. Existing tenants are recorded on `local` and keep working.
 In production, set `FILESYSTEM_DISK=s3` and the `AWS_*` keys.
 
 ### 8. Try it
@@ -243,7 +245,9 @@ docker compose run --rm node                       # build assets
 docker compose restart horizon reverb scheduler    # if they started before vendor/ existed
 ```
 
-Then open http://tenancey.localhost:8000 (mail at http://localhost:8025). Run the tests with
+Then open http://tenancey.localhost:8000 (mail at http://localhost:8025, file storage dashboard at
+http://localhost:19011, `minioadmin` / `minioadmin`). Docker's tenants store files on its own
+MinIO container. Run the tests with
 `docker compose exec app php artisan test`. Ports, daily commands and troubleshooting are in
 [docs/DOCKER.md](docs/DOCKER.md).
 

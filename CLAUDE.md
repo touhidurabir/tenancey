@@ -46,7 +46,8 @@ Read the matching doc before changing routes, middleware, queue config, Horizon 
 - Horizon and Reverb (WebSockets, port 8081) run under supervisor: `deploy/supervisor/` (README there).
 - **Docker runs side by side** at **http://tenancey.localhost:8000** (`compose.yaml`, guide in
   `docs/DOCKER.md`): its own MySQL (`127.0.0.1:3307` from the Mac), Redis, Mailpit, Horizon, Reverb
-  (8082) and scheduler, sharing this folder. Docker settings are container env vars that beat `.env`.
+  (8082), scheduler and MinIO (`localhost:19010`, dashboard `19011`; PHP uses `minio:9000`,
+  links are signed for `MINIO_PUBLIC_ENDPOINT`), sharing this folder. Docker settings are container env vars that beat `.env`.
   Docker's assets build into `public/build-docker` (`ASSET_BUILD_DIRECTORY`).
   - In Docker, run artisan as `docker compose exec app php artisan …`.
 - **Never run `php artisan config:cache`, `route:cache` or `optimize`**: `bootstrap/cache` is shared, so
