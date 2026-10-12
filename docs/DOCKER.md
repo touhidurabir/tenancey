@@ -76,8 +76,9 @@ Rebuild after changing anything in `docker/php/`.
   `tenancey` and `tenancey_testing`.
 - Containers reach each other by **service name** on the `tenancey_default` network. Inside a
   container, `127.0.0.1` is the container itself.
-- `docker compose down` keeps the data. `docker compose down -v` deletes Docker's MySQL and Redis
-  data (every Docker tenant); delete tenants in the UI first, as with `migrate:fresh` on Valet.
+- `docker compose down` keeps the data. `docker compose down -v` deletes Docker's MySQL, Redis and
+  MinIO data (every Docker tenant, and their buckets); delete tenants in the UI first, as with
+  `migrate:fresh` on Valet.
 
 ```bash
 docker compose exec mysql mysql -uroot -pdocker -e 'SHOW DATABASES'
@@ -261,16 +262,18 @@ docker compose down                             # remove the containers and netw
 
 ### Resetting Docker's data
 
-**Delete Docker's tenants in the UI first.** Their storage folders live in the shared
-`storage/` folder on the Mac, and only a teardown removes them. Then:
+**Delete Docker's tenants in the UI first.** Their storage folders (and the bucket folders of
+tenants recorded on `local`) live in the shared `storage/` folder on the Mac, and only a teardown
+removes them. MinIO buckets would go with the volume, but a teardown keeps everything consistent.
+Then:
 ```bash
-docker compose down -v      # also deletes the tenancey_* volumes: Docker's MySQL, Redis and node_modules
+docker compose down -v      # also deletes the tenancey_* volumes: Docker's MySQL, Redis, MinIO and node_modules
 docker compose up -d
 docker compose exec app php artisan migrate --seed --no-interaction
 docker compose run --rm node
 ```
-`-v` only deletes this project's named volumes. Valet's MySQL, Redis and the Mac's
-`node_modules` are never touched.
+`-v` only deletes this project's named volumes. Valet's MySQL, Redis, the Mac's MinIO and the
+Mac's `node_modules` are never touched.
 
 ## Troubleshooting
 
