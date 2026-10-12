@@ -115,11 +115,13 @@ the host, and the browser can't reach `minio`). Details in `docs/DOCKER.md`.
 
 ## 6. Tests
 
-- `phpunit.xml` pins `FILESYSTEM_DISK=local` and `TENANT_BUCKET_PREFIX=tenanceytest-`;
+- `phpunit.xml` pins `FILESYSTEM_DISK=local` (a `<server>` entry, so it beats Docker's
+  `FILESYSTEM_DISK: minio`) and `TENANT_BUCKET_PREFIX=tenanceytest-`;
   `Tests\TestCase` refuses any other prefix and deletes `storage/app/buckets/tenanceytest-*`
   before and after each test.
-- Tests marked `#[Group('minio')]` (`S3BucketManagerTest`, `MinioEndToEndTest`) use the real MinIO
-  from `.env`, delete only `tenanceytest-*` buckets, and are **skipped** when MinIO isn't
+- Tests marked `#[Group('minio')]` (`S3BucketManagerTest`, `MinioEndToEndTest`, one test in
+  `PublicEndpointSigningTest`) use the real MinIO (the Mac's from `.env` on Valet, the `minio`
+  container in Docker), delete only `tenanceytest-*` buckets, and are **skipped** when MinIO isn't
   reachable. Run them alone with `php artisan test --group=minio`.
 
 ## 7. Production (S3)

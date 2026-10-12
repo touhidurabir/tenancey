@@ -207,8 +207,10 @@ vendor/bin/pint --dirty        # format changed PHP files
 - Tests use real MySQL (`tenancey_testing`) and test-only prefixes: `tenanceytest_`, `tx_`,
   `storage/testtenant_`, `tenanceytest-` buckets (local disk), and Redis DBs 13–15. All of these
   are set in `phpunit.xml`.
-- `#[Group('minio')]` tests use the real MinIO from `.env` (only `tenanceytest-*` buckets) and are
-  skipped when it isn't running: `php artisan test --group=minio`.
+- `#[Group('minio')]` tests use the real MinIO (Valet: the Mac's from `.env`; Docker: the `minio`
+  container), only `tenanceytest-*` buckets, and are skipped when it isn't running:
+  `php artisan test --group=minio`. `FILESYSTEM_DISK=local` is a `<server>` entry in `phpunit.xml`
+  because Docker sets `minio`.
 - `Tests\TestCase` refuses any other database. It uses `DatabaseTruncation` (not `RefreshDatabase`,
   because `CREATE DATABASE` commits the open transaction). It runs the `provisioning` connection
   synchronously, and cleans up test-prefixed tenant resources before and after each test.

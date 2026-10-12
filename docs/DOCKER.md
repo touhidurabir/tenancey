@@ -226,6 +226,12 @@ docker compose exec app php artisan test --compact
   requests, so the names don't have to be reachable from Docker.
 - `<server>` writes `$_SERVER`, which Laravel reads first. That's why it wins over the
   container's environment, where `<env>` entries can't.
+- `FILESYSTEM_DISK` is a `<server>` entry for the same reason: `compose.yaml` sets it to `minio`,
+  and the tests expect `local` (they make bucket folders under `storage/app/buckets/`).
+- `#[Group('minio')]` tests use Docker's MinIO (`minio:9000`, only `tenanceytest-*` buckets):
+  `docker compose exec app php artisan test --compact --group=minio`. The host test in
+  `PublicEndpointSigningTest` is skipped in Docker: it needs the Mac's MinIO, reachable as both
+  `127.0.0.1` and `localhost`.
 - Everything else comes from `phpunit.xml` as on Valet: the `tenancey_testing` database (created
   by `docker/mysql/init/`), the test prefixes, and Redis DBs 13–15, all in Docker's MySQL and
   Redis.
