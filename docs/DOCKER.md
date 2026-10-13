@@ -52,11 +52,16 @@ traefik (docker-edge): HTTPS ends here, mkcert certificate; picks a router by ho
 
 ## One-time Mac setup
 
-All of it is described, with undo steps, in `~/Sites/docker-edge/README.md`:
+All of it is described, with undo steps, in `~/Sites/docker-edge/README.md`. docker-edge is a
+separate folder (its own repo), not part of this one. Without it, any Traefik v3 that creates an
+external network named `edge`, serves a trusted certificate for `tenancey.test` + `*.tenancey.test`,
+and reads Docker labels will do: `compose.yaml`'s labels are written for that.
 1. The `127.0.0.2` address and the two socat forwarders: launch daemons in
    `/Library/LaunchDaemons` (sources in `~/Sites/docker-edge/mac/`). Needs `brew install socat`.
 2. `brew install mkcert` and `mkcert -install` (the local certificate authority, trusted once).
-   The certificate for `tenancey.test` + `*.tenancey.test` lives in `~/Sites/docker-edge/certs/`.
+   Then the certificate, listed in docker-edge's `dynamic/tls.yaml`:
+   `mkcert -cert-file certs/tenancey.test.pem -key-file certs/tenancey.test-key.pem tenancey.test "*.tenancey.test"`
+   (run in `~/Sites/docker-edge`).
 3. docker-edge: `cd ~/Sites/docker-edge && docker compose up -d`. **Start it before tenancey**:
    tenancey's `compose.yaml` joins its `edge` network (`external: true`).
 4. DNS: `~/.config/valet/dnsmasq.d/tenancey.conf` with `address=/tenancey.test/127.0.0.2`, then
@@ -65,13 +70,18 @@ All of it is described, with undo steps, in `~/Sites/docker-edge/README.md`:
 ## First run of the project
 
 ```bash
-cp .env.example .env               # Docker values; fill APP_KEY, TENANT_DB_KEY, REVERB_APP_*
-docker compose up -d --build
+cp .env.example .env
+# Set REVERB_APP_ID, REVERB_APP_KEY and REVERB_APP_SECRET to random strings now: the browser's
+# copy (VITE_REVERB_APP_KEY) is baked into the JS by the asset build below.
+docker compose up -d --build                      # needs docker-edge's `edge` network (above)
+docker compose exec app composer install
 docker compose exec app php artisan key:generate
 docker compose exec app php artisan migrate --seed --no-interaction
-docker compose run --rm node       # build the assets
+docker compose run --rm node                      # build the assets
+docker compose restart horizon reverb scheduler   # they started before vendor/ and APP_KEY existed
 ```
-Then open https://tenancey.test and sign in as `admin@tenancey.test` / `password`.
+Then open https://tenancey.test and sign in as `admin@tenancey.test` / `password`. `TENANT_DB_KEY`
+can stay empty (it falls back to `APP_KEY`).
 
 ## Settings: `.env` only
 

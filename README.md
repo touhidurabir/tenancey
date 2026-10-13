@@ -103,14 +103,15 @@ These steps use the central domain `tenancey.test`. To use another, change `APP_
 ```bash
 git clone https://github.com/touhidurabir/tenancey.git
 cd tenancey
-cp .env.example .env                 # Docker values; leave the secrets empty for now
-# REVERB_APP_ID / REVERB_APP_KEY / REVERB_APP_SECRET: any random strings
+cp .env.example .env                 # Docker values
+# Set REVERB_APP_ID / REVERB_APP_KEY / REVERB_APP_SECRET to random strings now: the asset build
+# below bakes the key into the JS. APP_KEY is generated below; TENANT_DB_KEY may stay empty.
 docker compose up -d --build         # the edge network must exist first (your Traefik)
 docker compose exec app composer install
 docker compose exec app php artisan key:generate
 docker compose exec app php artisan migrate --seed --no-interaction   # admin@tenancey.test / password
 docker compose run --rm node         # build the assets
-docker compose restart horizon reverb scheduler   # they started before vendor/ existed
+docker compose restart horizon reverb scheduler   # they started before vendor/ and APP_KEY existed
 ```
 
 The central (`tenancey`) and test (`tenancey_testing`) databases are created by the MySQL

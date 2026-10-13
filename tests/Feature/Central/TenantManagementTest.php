@@ -96,6 +96,24 @@ class TenantManagementTest extends TestCase
         $this->assertTrue($tenant->fresh()->enabled);
     }
 
+    public function test_a_tenant_in_progress_shows_how_to_check_the_docker_workers(): void
+    {
+        $tenant = Tenant::query()->create([
+            'name' => 'Acme Ltd',
+            'subdomain' => 'acme',
+            'state' => TenantState::Provisioning,
+            'db_name' => 'tenanceytest_x',
+            'storage_path' => 'storage/testtenant_x',
+            'cache_prefix' => 'tenanceytest_x:',
+        ]);
+        $this->actingAs(CentralUser::factory()->create(), 'central');
+
+        $this->get($this->centralUrl('/tenants/'.$tenant->uuid))
+            ->assertOk()
+            ->assertSee('docker compose ps horizon reverb')
+            ->assertDontSee('supervisorctl');
+    }
+
     public function test_deleting_requires_typing_the_subdomain(): void
     {
         $tenant = Tenant::query()->create([
