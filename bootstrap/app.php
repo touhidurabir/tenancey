@@ -13,6 +13,11 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // Traefik (docker-edge) ends HTTPS and forwards http with X-Forwarded-Proto/Host/Port.
+        // Only Traefik can reach nginx, so trusting any proxy is safe locally; production lists
+        // its proxy's address instead.
+        $middleware->trustProxies(at: '*');
+
         // Guests and signed-in users are redirected within their own world: tenant routes run
         // with tenancy initialized, central routes without.
         $middleware->redirectGuestsTo(fn () => tenancy()->initialized ? route('login') : route('central.login'));

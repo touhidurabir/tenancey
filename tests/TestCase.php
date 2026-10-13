@@ -92,12 +92,12 @@ abstract class TestCase extends BaseTestCase
 
     protected function tenantUrl(string $subdomain, string $path = '/'): string
     {
-        return 'http://'.$subdomain.'.'.config('tenancy.central_domains')[0].'/'.ltrim($path, '/');
+        return 'https://'.$subdomain.'.'.config('tenancy.central_domains')[0].'/'.ltrim($path, '/');
     }
 
     protected function centralUrl(string $path = '/'): string
     {
-        return 'http://'.config('tenancy.central_domains')[0].'/'.ltrim($path, '/');
+        return 'https://'.config('tenancy.central_domains')[0].'/'.ltrim($path, '/');
     }
 
     /**

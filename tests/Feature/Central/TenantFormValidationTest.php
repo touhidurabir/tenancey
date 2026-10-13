@@ -32,6 +32,7 @@ class TenantFormValidationTest extends TestCase
             'dot' => ['acme.co'],
             'reserved' => ['admin'],
             'reserved horizon' => ['horizon'],
+            'reserved minio' => ['minio'],
         ];
     }
 
