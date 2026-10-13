@@ -7,9 +7,14 @@ How one Laravel app serves both the landlord site (`tenancey.test`) and every te
 
 This happens before Laravel runs:
 
-- **Locally:** Valet's dnsmasq sends every `*.test` name to 127.0.0.1. Valet serves the
-  subdomains of a linked site (`tenancey`) from the same `public/index.php`. So `tenancey.test`,
-  `acme.tenancey.test` and `beta.tenancey.test` all reach one app.
+- **Locally (Docker):** a dnsmasq rule sends `tenancey.test` and every `*.tenancey.test` to
+  `127.0.0.2`. The Traefik proxy there (docker-edge, see [DOCKER.md](DOCKER.md)) terminates HTTPS
+  and routes them all to tenancey's nginx, which sends every host to the same `public/index.php`.
+  So `tenancey.test`, `acme.tenancey.test` and `beta.tenancey.test` all reach one app. `ws.`,
+  `s3.`, `minio.` and `mail.` go to the side services instead, and are reserved subdomains.
+- **Behind the proxy**, PHP sees plain http. Laravel trusts the proxy's `X-Forwarded-Proto/Host/Port`
+  (`trustProxies` in `bootstrap/app.php`), so requests count as https and URLs come out `https://`.
+  The `Host` header is passed on unchanged, which is what tenant resolution reads.
 - **In production:** you need a wildcard DNS record (`*.yourdomain`), a wildcard TLS
   certificate, and a web server `server_name` that accepts the subdomains.
 

@@ -23,36 +23,39 @@ Read the matching doc before changing routes, middleware, queue config, Horizon 
   resolver, the middleware chain, the bootstrappers, sessions, and where each piece lives.
 - `docs/QUEUES.md`: driver vs queue connection vs queue, the Redis connections, Horizon
   supervisors vs workers, and the timing rules.
-- `docs/DOCKER.md`: the Docker local-development setup next to Valet: services, ports, how the two
-  setups share one folder, daily commands, troubleshooting.
+- `docs/DOCKER.md`: the development setup: how a request gets in (127.0.0.2, socat, Traefik),
+  URLs, settings, services, daily commands, troubleshooting.
 - `docs/STORAGE.md`: tenant files. Read before changing storage, buckets or medialibrary: the
   `FILESYSTEM_DISK` setting, one bucket per tenant, the bucket managers and bootstrapper, signed
-  downloads, MinIO on the Mac.
+  downloads, MinIO in Docker.
 - `docs/BROADCASTING.md`: live provisioning/teardown over Reverb. Covers the channels, channel
   auth with the `central` guard, the path from a tenant save to the browser, and why the events
   use `ShouldBroadcastNow`.
 
 ## Environment
 
-- Served by Valet at **http://tenancey.test/** (`APP_URL`). Don't use `php artisan serve` for browsing.
-- MySQL `127.0.0.1:3306`, user `root`, empty password. The central (landlord) DB is **`tenancey`**.
-- **The MySQL server may be shared with other projects**, which can own similarly named databases
-  (e.g. `tenant_<uuid>`). This project's tenant databases are `tenancey_{uuid}`
+Docker only (`compose.yaml`, guide in `docs/DOCKER.md`), behind the shared Traefik proxy in
+`~/Sites/docker-edge` (HTTPS on `127.0.0.2`, its own README). Valet no longer serves this app.
+- **https://tenancey.test/** (`APP_URL`), tenants at `https://{subdomain}.tenancey.test`. Side services:
+  `wss://ws.tenancey.test` (Reverb), `https://s3.tenancey.test` (MinIO API, what links are signed for),
+  `https://minio.tenancey.test` (MinIO dashboard), `https://mail.tenancey.test` (Mailpit). Those four
+  names are reserved subdomains.
+- **Run artisan, composer and tests inside the container:** `docker compose exec app php artisan …`.
+  The Mac's PHP can't reach `mysql`/`redis`/`minio` by name.
+- `.env` holds Docker's values and is the only source of settings (`compose.yaml` sets none for
+  Laravel). Laravel trusts the proxy's `X-Forwarded-*` headers (`trustProxies` in `bootstrap/app.php`).
+- MySQL: container `mysql`, from the Mac at `127.0.0.1:3307`, user `root`, password `docker`. The central
+  (landlord) DB is **`tenancey`**. This project's tenant databases are `tenancey_{uuid}`
   (`TENANT_DATABASE_PREFIX`). Never drop databases or users by pattern.
-- Redis (local, phpredis) holds queues, cache and sessions. Mail goes over SMTP to HELO on port 2525.
-- MinIO (S3-compatible file storage): API `127.0.0.1:19000`, dashboard `localhost:19001`, run by the
-  launch agent `local.minio` (not `brew services`). Valet's `.env` has `FILESYSTEM_DISK=minio`.
+- Redis (phpredis) holds queues, cache and sessions. Mail goes to Mailpit (`mailpit:1025`).
+- MinIO: PHP uses `minio:9000` (`MINIO_ENDPOINT`), the browser `https://s3.tenancey.test`
+  (`MINIO_PUBLIC_ENDPOINT`). `FILESYSTEM_DISK=minio` for new tenants.
 - Central admin login: `admin@tenancey.test` / `password` (from `DatabaseSeeder`).
-- Horizon and Reverb (WebSockets, port 8081) run under supervisor: `deploy/supervisor/` (README there).
-- **Docker runs side by side** at **http://tenancey.localhost:8000** (`compose.yaml`, guide in
-  `docs/DOCKER.md`): its own MySQL (`127.0.0.1:3307` from the Mac), Redis, Mailpit, Horizon, Reverb
-  (8082), scheduler and MinIO (`localhost:19010`, dashboard `19011`; PHP uses `minio:9000`,
-  links are signed for `MINIO_PUBLIC_ENDPOINT`), sharing this folder. Docker settings are container env vars that beat `.env`.
-  Docker's assets build into `public/build-docker` (`ASSET_BUILD_DIRECTORY`).
-  - In Docker, run artisan as `docker compose exec app php artisan …`.
-- **Never run `php artisan config:cache`, `route:cache` or `optimize`**: `bootstrap/cache` is shared, so
-  one setup's hosts and ports (and the central domain in the route cache) would leak into the other.
-  If it happens, `php artisan optimize:clear`.
+- Horizon, Reverb and the scheduler are Compose services. `deploy/supervisor/` is unused, kept for reference.
+- **The Mac's own MySQL (3306) and MinIO (19000) are shared with other projects** and still hold the
+  old Valet data (`tenancey*` databases, buckets), unused. Never delete anything there by pattern.
+- **Don't run `php artisan config:cache`, `route:cache` or `optimize` in development:** cached config
+  hides `.env` changes. If it happens, `php artisan optimize:clear`.
 
 ## Multi-tenancy (stancl/tenancy v3, one database per tenant)
 
@@ -152,8 +155,9 @@ Read the matching doc before changing routes, middleware, queue config, Horizon 
   `storage_disk` (`local` folder, MinIO or S3); details in `docs/STORAGE.md`.
   - `FILESYSTEM_DISK` only decides the disk of NEW tenants. Existing ones keep theirs.
   - Buckets are created and deleted only through `App\Tenancy\Storage\BucketManager`, behind
-    `TenantResourceGuard::assertBucketOwned()`. Never delete buckets by pattern: the Mac's MinIO
-    is shared. Don't change `TENANT_BUCKET_PREFIX` once tenants exist.
+    `TenantResourceGuard::assertBucketOwned()`. Never delete buckets by pattern: a
+    production S3 account (like the Mac's own MinIO) can be shared. Don't change `TENANT_BUCKET_PREFIX`
+    once tenants exist.
   - Local signed links carry the tenant key (the host isn't signed): keep it when touching
     `tenant.storage.local`.
   - `App\Tenancy\TenantBucketBootstrapper` points the disk (and medialibrary) at the bucket while
@@ -172,45 +176,40 @@ Read the matching doc before changing routes, middleware, queue config, Horizon 
 
 ## Frontend / Node
 
-- Node **22.12.0** is pinned in `.nvmrc`. A `chpwd` hook in `~/.zshrc` auto-switches on `cd`, and the
-  system default stays 20.19.4. In a non-interactive shell, run `source ~/.nvm/nvm.sh && nvm use` first.
-- `npm run dev` does a **one-shot** development build (unminified) into `public/build`, then exits.
-  The app keeps working with no process running.
-- `npm run watch` rebuilds on change. `npm run hot` starts the Vite HMR server. `npm run build`
-  makes the minified production build.
-- `composer dev` / `php artisan dev` runs the server, Horizon, logs and `npm run hot` (the vite
-  entry is overridden in `AppServiceProvider`).
-- If pages try to load assets from `localhost:517x`, a stale `public/hot` file is the cause: an HMR
-  server was killed uncleanly. Delete it.
+- Assets are built by the `node` container (Node 22.12, as in `.nvmrc`) into `public/build`. Vite reads
+  `VITE_*` (e.g. the browser's Reverb address) from `.env` and bakes them in.
+- `docker compose run --rm node` runs `npm ci` + a one-shot development build (unminified), then exits.
+  `docker compose run --rm node npm run dev` rebuilds only, `… npm run watch` rebuilds on change,
+  `… npm run build` makes the minified production build. There is no Vite dev server (HMR).
+- If pages try to load assets from `localhost:517x`, a stale `public/hot` file is the cause. Delete it.
 
 ## Commands
 
 ```bash
-supervisorctl status tenancey-horizon  # Horizon is REQUIRED for provisioning; dashboard: /horizon
-php artisan horizon:terminate  # after changing job code (supervisor restarts it on new code)
-supervisorctl status tenancey-reverb  # Reverb, for live progress pages (docs/BROADCASTING.md)
-php artisan reverb:restart     # after changing REVERB_* settings or Reverb-related code
-# logs: http://tenancey.test/log-viewer (central admin)   audit: http://tenancey.test/audit
-php artisan migrate            # central DB migrations
-php artisan tenants:migrate    # tenant DB migrations, every tenant
-php artisan tenants:list
-npm run dev                    # build assets once (dev mode)
-php artisan test               # tests
-vendor/bin/pint --dirty        # format changed PHP files
+docker compose up -d                                   # start (docker-edge must be up: ~/Sites/docker-edge)
+docker compose ps                                      # Horizon is REQUIRED for provisioning; dashboard: /horizon
+docker compose restart horizon                         # after changing job code
+docker compose restart reverb                          # after changing REVERB_* settings or Reverb-related code
+# logs: https://tenancey.test/log-viewer (central admin)   audit: https://tenancey.test/audit
+docker compose exec app php artisan migrate            # central DB migrations
+docker compose exec app php artisan tenants:migrate    # tenant DB migrations, every tenant
+docker compose exec app php artisan tenants:list
+docker compose run --rm node npm run dev               # build assets once (dev mode)
+docker compose exec app php artisan test --compact     # tests
+docker compose exec app vendor/bin/pint --dirty        # format changed PHP files
 ```
 
 ## Testing
 
-- `phpunit.xml` pins `APP_URL`/`CENTRAL_DOMAIN` to `tenancey.test` with `<server>` (not `<env>`, which
-  can't beat Docker's container env), so link assertions are identical on Valet and in Docker
-  (`docker compose exec app php artisan test`).
+- Tests run in the container: `docker compose exec app php artisan test --compact`.
+- `phpunit.xml` pins `APP_URL=https://tenancey.test` and `CENTRAL_DOMAIN=tenancey.test` with `<server>`
+  (Laravel reads `$_SERVER` first, so it beats `.env`). The `TestCase` URL helpers use https.
 - Tests use real MySQL (`tenancey_testing`) and test-only prefixes: `tenanceytest_`, `tx_`,
   `storage/testtenant_`, `tenanceytest-` buckets (local disk), and Redis DBs 13–15. All of these
   are set in `phpunit.xml`.
-- `#[Group('minio')]` tests use the real MinIO (Valet: the Mac's from `.env`; Docker: the `minio`
-  container), only `tenanceytest-*` buckets, and are skipped when it isn't running:
-  `php artisan test --group=minio`. `FILESYSTEM_DISK=local` is a `<server>` entry in `phpunit.xml`
-  because Docker sets `minio`.
+- `#[Group('minio')]` tests use the `minio` container, only `tenanceytest-*` buckets, and are skipped
+  when it isn't running: `docker compose exec app php artisan test --group=minio`. `FILESYSTEM_DISK=local`
+  is a `<server>` entry in `phpunit.xml` because `.env` sets `minio`.
 - `Tests\TestCase` refuses any other database. It uses `DatabaseTruncation` (not `RefreshDatabase`,
   because `CREATE DATABASE` commits the open transaction). It runs the `provisioning` connection
   synchronously, and cleans up test-prefixed tenant resources before and after each test.

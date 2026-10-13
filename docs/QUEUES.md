@@ -1,7 +1,8 @@
 # Queues, connections and Horizon: what each word means
 
 A reference for the terms that are easy to mix up in `config/queue.php`, `config/database.php`
-and `config/horizon.php`. For running the Horizon process itself, see [deploy/supervisor/README.md](../deploy/supervisor/README.md).
+and `config/horizon.php`. Horizon itself runs as the `horizon` Compose service ([DOCKER.md](DOCKER.md)).
+On a non-Docker server, supervisord plays that role: [deploy/supervisor/README.md](../deploy/supervisor/README.md).
 
 ## 1. Driver, queue connection, queue
 
@@ -133,7 +134,7 @@ The three entries in `config/horizon.php` → `defaults` are **not** workers. Ea
 process tree:
 
 ```
-supervisord                                    the OS program (tenancey-horizon.conf). Not Laravel.
+Docker (the horizon service)                   keeps the process alive (supervisord on a plain server). Not Laravel.
 └─ artisan horizon                             Horizon master: exactly 1 per server
    ├─ horizon:supervisor …default-supervisor          pool manager (runs no jobs)
    │  └─ horizon:work redis        --queue=default       worker: runs jobs, one at a time
@@ -145,12 +146,13 @@ supervisord                                    the OS program (tenancey-horizon.
 
 | Level | How many | Job |
 |---|---|---|
-| **supervisord** | 1 program | Keeps `artisan horizon` alive; restarts it after a crash or `horizon:terminate` |
+| **Docker / supervisord** | 1 container (or program) | Keeps `artisan horizon` alive; restarts it after a crash or `horizon:terminate` (`restart: unless-stopped`) |
 | **Horizon master** | 1 per server | Reads `config/horizon.php`, starts one supervisor per entry |
 | **Horizon supervisor** | 1 per entry (3) | Starts, restarts and scales its workers, and recycles any over `memory` |
 | **Worker** | `maxProcesses` per pool | Pops a job and runs it: same idea as `queue:work` |
 
 "supervisord" and "Horizon supervisor" are unrelated things that happen to share a name.
+In Docker the outer level is the container, and the rest of the tree is the same.
 
 ### One pool definition
 
@@ -188,7 +190,7 @@ connection's rules differ.
 ## 4. Timing rules that must hold
 
 ```
-Horizon pool timeout  <  queue connection retry_after  <  supervisord stopwaitsecs  (≥ longest timeout)
+Horizon pool timeout  <  queue connection retry_after       stop grace period > longest timeout
 ```
 
 | Pool | `timeout` | `retry_after` |
@@ -199,8 +201,10 @@ Horizon pool timeout  <  queue connection retry_after  <  supervisord stopwaitse
 
 - **`timeout < retry_after`**: otherwise a still-running job is handed to a second worker and
   runs twice.
-- **`stopwaitsecs` (660) > longest `timeout` (600)**: on stop or restart, Horizon lets running
-  jobs finish. If supervisord stops waiting first, it SIGKILLs a tenant halfway through its chain.
+- **The stop grace period (660) > longest `timeout` (600)**: on stop or restart, Horizon lets
+  running jobs finish. If the stopper stops waiting first, it SIGKILLs a tenant halfway through its
+  chain. In Docker that's `stop_grace_period: 660s` on the `horizon` service, with
+  `stop_signal: SIGTERM`. Under supervisord it's `stopwaitsecs`.
 
 Change any of these numbers together, never one alone.
 
@@ -212,7 +216,8 @@ Change any of these numbers together, never one alone.
   - Horizon keeps its own dashboard data (job metrics, supervisors, failed jobs) in the same DB
     under a separate prefix, `tenancey_horizon:` (`horizon.prefix`).
 - **"I changed a job class and nothing changed."** Workers keep old code in memory. Run
-  `php artisan horizon:terminate`; supervisord restarts Horizon on the new code.
+  `docker compose restart horizon` (or `php artisan horizon:terminate`, after which Docker
+  starts it again on the new code).
 - **"I need more parallel provisioning."** Raise `provisioning-supervisor.maxProcesses` for that
   environment. Every running job uses a worker and a DB connection.
 - **"I want a new priority queue."** Add it to an existing pool's `queue` list (e.g.
