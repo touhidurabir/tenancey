@@ -31,7 +31,7 @@ class ImpersonationTest extends TestCase
 
         $link = $this->requestLink($tenant);
 
-        $this->assertMatchesRegularExpression('#^http://acme\.tenancey\.test/impersonate/[A-Za-z0-9]{64}$#', $link);
+        $this->assertMatchesRegularExpression('#^https://acme\.tenancey\.test/impersonate/[A-Za-z0-9]{64}$#', $link);
         $token = basename($link);
         $this->assertNull(ImpersonationToken::query()->where('token_hash', $token)->first(), 'only the hash is stored');
         $this->assertNotNull(ImpersonationToken::query()->where('token_hash', ImpersonationToken::hash($token))->first());

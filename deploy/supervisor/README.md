@@ -1,5 +1,9 @@
 # Supervised processes
 
+> **Unused since the Docker-only switch (2026-10-13).** Horizon, Reverb and the scheduler run as
+> Compose services (`docs/DOCKER.md`). The local programs are stopped. These files are kept for
+> reference, and the production `*.conf` files as a starting point for a non-Docker server.
+
 Confused by driver vs queue connection vs queue, or Horizon supervisors vs workers? See
 [docs/QUEUES.md](../../docs/QUEUES.md).
 

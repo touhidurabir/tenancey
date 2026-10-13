@@ -65,7 +65,7 @@
             <p class="mt-4 text-xs text-gray-500">
                 Live updates: <span data-progress-connection>connecting…</span>
                 @if ($inProgress)
-                    · Nothing moving? Check Horizon (<code>supervisorctl status tenancey-horizon</code>) and Reverb (<code>php artisan reverb:start</code>).
+                    · Nothing moving? Check Horizon and Reverb (<code>docker compose ps horizon reverb</code>, then <code>docker compose logs horizon</code>).
                 @endif
             </p>
         </section>

@@ -1,14 +1,14 @@
 # File storage: one setting, one bucket per tenant
 
-How tenant files are stored, on the Mac (local folders or MinIO) and in production (S3). The
-design is `docs/superpowers/specs/2026-10-11-tenant-storage-buckets-design.md`.
+How tenant files are stored in development (local folders or the MinIO container) and in
+production (S3). The design is `docs/superpowers/specs/2026-10-11-tenant-storage-buckets-design.md`.
 
 ## 1. One setting: `FILESYSTEM_DISK`
 
 | Value | Where files go | Reads |
 |---|---|---|
 | `local` | folders under `storage/app/buckets/` | nothing else |
-| `minio` | the Mac's MinIO (S3 protocol, path-style addresses) | `MINIO_ENDPOINT`, `MINIO_KEY`, `MINIO_SECRET`, `MINIO_REGION` |
+| `minio` | the MinIO container (S3 protocol, path-style addresses) | `MINIO_ENDPOINT`, `MINIO_KEY`, `MINIO_SECRET`, `MINIO_REGION` |
 | `s3` | Amazon S3 | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION` (and `AWS_ENDPOINT` for other S3-compatible services) |
 
 Production: set the `AWS_*` keys and `FILESYSTEM_DISK=s3`. No code changes.
@@ -32,13 +32,14 @@ files.
 - **Recorded on the tenant row:** `storage_disk` and `storage_bucket`. A tenant keeps the disk it
   was created with, so **changing `FILESYSTEM_DISK` only affects new tenants**. Old ones keep
   working on their recorded disk. Moving a tenant's files between disks is not built.
-- **Upgrading an install made before buckets existed**, in this order:
+- **Upgrading an install made before buckets existed**, in this order (inside the `app` container:
+  `docker compose exec app php artisan …`):
   1. `php artisan migrate`: adds `storage_disk`/`storage_bucket`; existing tenants are recorded
      on `local`.
   2. `php artisan tenants:migrate`: the `media` table in every tenant database.
   3. `php artisan tenants:create-buckets`: creates any missing bucket for every live tenant. Safe
      to re-run.
-  4. Restart Horizon (`php artisan horizon:terminate`).
+  4. Restart Horizon (`docker compose restart horizon`).
 
   In Docker, prefix each with `docker compose exec app` and restart with
   `docker compose restart horizon` (`docs/DOCKER.md`).
@@ -79,50 +80,40 @@ never writes into the shared central folder.
   - S3/MinIO: the presigned URL straight to the bucket (`…?X-Amz-Signature=…`);
   - local: the tenant route `tenant.storage.local` (`/storage/local/{path}`, `signed:relative`),
     served by `LocalFileController` from the current tenant's bucket.
-- The local link is signed **relative** (path and query, not the host) so it works on Valet and
-  Docker alike. The host isn't signed, so the **tenant key is**: the link carries `tenant=<uuid>`,
+- The local link is signed **relative** (path and query, not the host), so it works whatever host
+  and scheme the browser used. The host isn't signed, so the **tenant key is**: the link carries `tenant=<uuid>`,
   and `LocalFileController` answers 403 on any other tenant. (Paths like `1/report.pdf` repeat in
   every tenant's bucket, so "the file isn't there" would not be enough.)
 - Laravel's own `local` file route (`serve`) is off: it doesn't initialize tenancy.
 
-## 5. MinIO on the Mac
+## 5. MinIO in Docker
 
-- Installed with `brew install minio`, run by **our own launch agent**,
-  `~/Library/LaunchAgents/local.minio.plist` (label `local.minio`):
-  - API (what the app talks to): **http://127.0.0.1:19000**
-  - Dashboard: **http://localhost:19001**, `minioadmin` / `minioadmin`
-  - Data: `/usr/local/var/minio`; log: `/usr/local/var/log/minio.log`
-- **Not `brew services`:** brew starts MinIO on port 9000, which Homebrew PHP-FPM's default pool
-  already holds, and gives the dashboard a random port. `brew services list` shows `minio none`
-  for our agent; that is expected.
+Development uses the `minio` container (`docs/DOCKER.md` has the service details):
+- PHP talks to it as **`http://minio:9000`** (`MINIO_ENDPOINT`): bucket creation, uploads, deletes.
+- The browser reaches it as **`https://s3.tenancey.test`** (`MINIO_PUBLIC_ENDPOINT`), through the
+  Traefik proxy. Links are signed for that address: a signature covers the host, and the browser
+  can't reach `minio`. Traefik passes the `Host` header on unchanged, so MinIO checks the signature
+  against the host it was made for.
+- Dashboard: **https://minio.tenancey.test**, `minioadmin` / `minioadmin`. Data: the `minio-data`
+  volume.
 
 ```bash
-launchctl print gui/$(id -u)/local.minio | grep -E 'state|pid'            # running?
-launchctl kickstart -k gui/$(id -u)/local.minio                          # restart (e.g. after brew upgrade minio)
-launchctl bootout gui/$(id -u)/local.minio                               # stop
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/local.minio.plist # start
-curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:19000/minio/health/live   # 200
+curl -s -o /dev/null -w '%{http_code}\n' https://s3.tenancey.test/minio/health/live   # 200
 ```
 
-The Mac's MinIO may be shared with other projects: **never delete buckets by pattern**, except
-the tests' `tenanceytest-*`.
-
-**Docker** has its own MinIO, the `minio` container: API `localhost:19010`, dashboard
-**http://localhost:19011** (`minioadmin` / `minioadmin`), data in the `minio-data` volume.
-`compose.yaml` sets `FILESYSTEM_DISK: minio`, `MINIO_ENDPOINT: http://minio:9000` (what PHP uses)
-and `MINIO_PUBLIC_ENDPOINT: http://localhost:19010` (what links are signed for: a signature covers
-the host, and the browser can't reach `minio`). Details in `docs/DOCKER.md`.
+**The Mac's own MinIO** (`127.0.0.1:19000`, launch agent `local.minio`) is what the old Valet setup
+used. It still holds those buckets, unused, and **it may be shared with other projects: never
+delete buckets there by pattern.**
 
 ## 6. Tests
 
-- `phpunit.xml` pins `FILESYSTEM_DISK=local` (a `<server>` entry, so it beats Docker's
-  `FILESYSTEM_DISK: minio`) and `TENANT_BUCKET_PREFIX=tenanceytest-`;
+- `phpunit.xml` pins `FILESYSTEM_DISK=local` (a `<server>` entry, so it beats `.env`'s
+  `FILESYSTEM_DISK=minio`) and `TENANT_BUCKET_PREFIX=tenanceytest-`;
   `Tests\TestCase` refuses any other prefix and deletes `storage/app/buckets/tenanceytest-*`
   before and after each test.
 - Tests marked `#[Group('minio')]` (`S3BucketManagerTest`, `MinioEndToEndTest`, one test in
-  `PublicEndpointSigningTest`) use the real MinIO (the Mac's from `.env` on Valet, the `minio`
-  container in Docker), delete only `tenanceytest-*` buckets, and are **skipped** when MinIO isn't
-  reachable. Run them alone with `php artisan test --group=minio`.
+  `PublicEndpointSigningTest`) use the `minio` container, delete only `tenanceytest-*` buckets, and are **skipped** when MinIO
+  isn't reachable. Run them alone with `docker compose exec app php artisan test --group=minio`.
 
 ## 7. Production (S3)
 

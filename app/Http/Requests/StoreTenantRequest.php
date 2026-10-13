@@ -20,6 +20,7 @@ class StoreTenantRequest extends FormRequest
      */
     public const RESERVED_SUBDOMAINS = [
         'www', 'admin', 'api', 'mail', 'app', 'central', 'tenancey', 'static', 'assets', 'horizon',
+        's3', 'minio', 'ws', // side services routed by Traefik (docs/DOCKER.md)
     ];
 
     protected function prepareForValidation(): void

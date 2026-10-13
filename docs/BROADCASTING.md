@@ -8,7 +8,7 @@ hosts, see [ROUTING.md](ROUTING.md).
 
 | Piece | What it is | Where |
 |---|---|---|
-| **Reverb** | A WebSocket server. It holds the browsers' open connections and forwards messages to them | Supervisor program `tenancey-reverb` (`deploy/supervisor/`), port 8081 locally |
+| **Reverb** | A WebSocket server. It holds the browsers' open connections and forwards messages to them | The `reverb` Compose service, `reverb:8080` inside Docker, `wss://ws.tenancey.test` from the browser |
 | **Broadcaster** | Laravel's side: sends events to Reverb over HTTP | `BROADCAST_CONNECTION=reverb`, `config/broadcasting.php` |
 | **Echo** | The browser's side: opens the WebSocket and subscribes to channels | `resources/js/echo.js` (laravel-echo + pusher-js) |
 | **Channel** | A named stream. Private channels (`private-…`) need Laravel's permission to join | `routes/channels.php` |
@@ -20,10 +20,15 @@ hosts, see [ROUTING.md](ROUTING.md).
 |---|---|---|
 | `REVERB_SERVER_HOST` / `REVERB_SERVER_PORT` | `reverb:start` | Where the Reverb process **binds** (listens) |
 | `REVERB_HOST` / `REVERB_PORT` / `REVERB_SCHEME` | Laravel's broadcaster | Where Laravel **sends** events |
-| `VITE_REVERB_*` (copied from `REVERB_*`) | Echo in the browser | Where the browser **connects**. Built into the JS by Vite, so rebuild after changing them |
+| `VITE_REVERB_*` | Echo in the browser | Where the browser **connects**. Built into the JS by Vite, so rebuild after changing them |
 
-Locally all of these point at port 8081. Behind a proxy in production, the public `REVERB_*`
-address (e.g. `wss://ws.example.com:443`) differs from the bind address.
+In Docker the three differ:
+- Reverb binds `0.0.0.0:8080` inside its container.
+- Laravel sends to `reverb:8080`, the service name, over plain http inside Docker.
+- The browser connects to `wss://ws.tenancey.test:443`. Traefik terminates TLS and passes the
+  WebSocket on to `reverb:8080` over the `edge` network.
+
+Production looks the same with a real domain (e.g. `wss://ws.example.com`).
 
 ## 2. The channels
 
@@ -54,7 +59,7 @@ Laravel never talks to the browser directly about events, and the channel route 
 per event.
 
 ```
- Browser ──(1) WebSocket──────────────▶ Reverb (:8081)
+ Browser ──(1) WebSocket──────────────▶ Reverb (wss://ws.tenancey.test → Traefik → reverb:8080)
  Browser ──(2) POST /broadcasting/auth ▶ Laravel   "may I listen on private-tenants?"
  Browser ──(3) subscribe + signature ─▶ Reverb     (now listening)
                                 ...later...
@@ -70,7 +75,7 @@ This happens before any tenant is created, when the admin opens `/tenants`.
 `tenant-progress.js`, then `tenant-list.js`.
 
 **A2. `echo.js` opens a WebSocket.** `new Echo({ broadcaster: 'reverb', key, wsHost, wsPort })`
-makes pusher-js connect to `ws://localhost:8081/app/{REVERB_APP_KEY}`. Reverb accepts and gives
+makes pusher-js connect to `wss://ws.tenancey.test/app/{REVERB_APP_KEY}`. Reverb accepts and gives
 this connection a **socket id**, such as `1234.5678`.
 
 **A3. `tenant-list.js` asks to subscribe.**
@@ -83,7 +88,7 @@ window.Echo.private('tenants').listen('.progress.updated', update);
 **A4. The browser asks Laravel for permission. This is where the channel route is hit.**
 pusher-js sends:
 ```
-POST http://tenancey.test/broadcasting/auth
+POST https://tenancey.test/broadcasting/auth
   socket_id=1234.5678 & channel_name=private-tenants
   Cookie: the admin's session      X-CSRF-TOKEN: from <meta name="csrf-token">
 ```
@@ -169,11 +174,13 @@ hands it to the **BroadcastManager**.
 **B8. Laravel sends one HTTP request to Reverb.** The `reverb` driver uses the Pusher HTTP
 protocol:
 ```
-POST http://localhost:8081/apps/{REVERB_APP_ID}/events      (REVERB_HOST / REVERB_PORT)
+POST http://reverb:8080/apps/{REVERB_APP_ID}/events      (REVERB_HOST / REVERB_PORT)
   { name: "progress.updated", channels: [...both...], data: {...} }   signed with the key and secret
 ```
-To watch it arrive, stop the supervised Reverb (`supervisorctl stop tenancey-reverb`) and run
-`php artisan reverb:start --debug` in a terminal; start the supervised one again afterwards.
+To watch it arrive, run Reverb with `--debug` for a while: `docker compose stop reverb`, then
+`docker compose run --rm --use-aliases reverb php artisan reverb:start --debug`. `--use-aliases`
+gives the one-off container the name `reverb`, so Laravel's POSTs reach it. Afterwards: Ctrl+C,
+then `docker compose start reverb`.
 
 **B9. Reverb forwards the message.** For each channel listed, it finds the sockets subscribed
 to it:
@@ -327,17 +334,18 @@ Steps 1–3 happen once per page and channel. Steps 4–7 happen on every releva
 - **Only state, `current_step` and `last_error` broadcast** (plus the create). Renames and
   enable/disable don't. To make them live, add `name` and `enabled` to the `wasChanged([...])`
   list in `Tenant::booted()`.
-- **After changing event or model code**, run `php artisan horizon:terminate`: the Horizon
+- **After changing event or model code**, run `docker compose restart horizon`: the Horizon
   workers send most of these events and keep the old code until they restart.
-- **After changing `REVERB_*` settings**, run `php artisan reverb:restart`; supervisor starts it
-  again on the new settings.
-- **After changing `VITE_REVERB_*` or the JS**, rebuild the assets (`npm run dev`).
+- **After changing `REVERB_*` settings or Reverb-related code**, run `docker compose restart reverb`.
+- **After changing `VITE_REVERB_*` or the JS**, rebuild the assets
+  (`docker compose run --rm node npm run dev`).
 - **Nothing updating?** The status line on the tenant page shows the WebSocket state:
-  - `unavailable`: Reverb is not running (`supervisorctl status tenancey-reverb`; its output is in
-    `storage/logs/supervisor-tenancey-reverb.log`).
+  - `unavailable`: the browser can't reach Reverb. Check `docker compose ps reverb`,
+    `docker compose logs reverb`, and DevTools → Network → WS (`wss://ws.tenancey.test`, status 101).
+    A Traefik 404 there means the `tenancey-ws` router is missing.
   - `not authorized for this channel`: `/broadcasting/auth` returned 403. Are you signed in as
     a central admin?
-  - Connected but no events: check Horizon (`supervisorctl status tenancey-horizon`), and
+  - Connected but no events: check Horizon (`docker compose ps horizon`), and
     `storage/logs/laravel.log` for broadcast errors caught by `rescue()`.
 - **Tests run with `BROADCAST_CONNECTION=null`** (`phpunit.xml`), which authorizes nothing.
   `TenantProgressBroadcastTest` fakes the events, and switches to the Reverb driver only to
@@ -348,7 +356,7 @@ Steps 1–3 happen once per page and channel. Steps 4–7 happen on every releva
 | What | Where |
 |---|---|
 | Reverb server and app keys | `.env` `REVERB_*`, `config/reverb.php` |
-| Reverb process | `deploy/supervisor/tenancey-reverb.conf` (production), `deploy/supervisor/local/tenancey.ini` (local) |
+| Reverb process | the `reverb` service in `compose.yaml` (labels route `ws.tenancey.test` to it) |
 | Broadcaster (where Laravel sends) | `.env` `BROADCAST_CONNECTION`, `config/broadcasting.php` |
 | `/broadcasting/auth` route | `bootstrap/app.php` → `withRouting(channels: …)` |
 | Who may join which channel | `routes/channels.php` |

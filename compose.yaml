@@ -1,31 +1,7 @@
 # Local development for tenancey. Guide: docs/DOCKER.md
-# App: http://tenancey.localhost:8000   Tenants: http://{subdomain}.tenancey.localhost:8000
+# App: https://tenancey.test   Tenants: https://{subdomain}.tenancey.test (through docker-edge)
 name: tenancey
-
-# Docker-only settings. They win over .env because Laravel never overwrites a variable that is
-# already set in the environment. Secrets (APP_KEY, TENANT_DB_KEY, REVERB_APP_*) stay in .env.
-x-laravel-env: &laravel-env
-  APP_URL: http://tenancey.localhost:8000
-  CENTRAL_DOMAIN: tenancey.localhost
-  DB_HOST: mysql
-  DB_PORT: "3306"
-  DB_USERNAME: root
-  DB_PASSWORD: docker
-  REDIS_HOST: redis
-  REDIS_PORT: "6379"
-  MAIL_HOST: mailpit
-  MAIL_PORT: "1025"
-  REVERB_HOST: reverb
-  REVERB_PORT: "8080"
-  REVERB_SCHEME: http
-  REVERB_SERVER_HOST: 0.0.0.0
-  REVERB_SERVER_PORT: "8080"
-  ASSET_BUILD_DIRECTORY: build-docker
-  FILESYSTEM_DISK: minio # new tenants; existing ones keep the disk they were created on
-  MINIO_ENDPOINT: http://minio:9000 # PHP containers reach MinIO by its service name
-  MINIO_PUBLIC_ENDPOINT: http://localhost:19010 # signed links are opened by the browser on the Mac
-  MINIO_KEY: minioadmin
-  MINIO_SECRET: minioadmin
+# Laravel settings live in .env (Docker values only).
 
 # Shared by the four PHP services: same image, same code, same settings.
 x-php: &php
@@ -33,7 +9,6 @@ x-php: &php
   image: tenancey-php:dev
   volumes:
     - .:/var/www/html
-  environment: *laravel-env
   depends_on:
     mysql:
       condition: service_healthy
@@ -56,8 +31,14 @@ services:
   reverb:
     <<: *php
     command: php artisan reverb:start
-    ports:
-      - "8082:8080" # the browser connects to localhost:8082; PHP containers use reverb:8080
+    networks: [default, edge] # the browser: wss://ws.tenancey.test → Traefik; PHP containers: reverb:8080
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: edge
+      traefik.http.routers.tenancey-ws.rule: Host(`ws.tenancey.test`)
+      traefik.http.routers.tenancey-ws.entrypoints: websecure
+      traefik.http.routers.tenancey-ws.priority: "100"
+      traefik.http.services.tenancey-ws.loadbalancer.server.port: "8080"
     stop_signal: SIGTERM # as for horizon: Reverb shuts down on SIGTERM, not the image's SIGQUIT
     stop_grace_period: 30s
 
@@ -68,8 +49,16 @@ services:
 
   nginx:
     image: nginx:1.30-alpine
-    ports:
-      - "8000:80" # the app: http://tenancey.localhost:8000
+    networks: [default, edge]
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: edge
+      # The central domain and every tenant. Priority 1, so the named side services win
+      # (Traefik's default priority is the rule's length, and this rule is the longest).
+      traefik.http.routers.tenancey.rule: 'Host(`tenancey.test`) || HostRegexp(`^[a-z0-9-]+\.tenancey\.test$$`)'
+      traefik.http.routers.tenancey.entrypoints: websecure
+      traefik.http.routers.tenancey.priority: "1"
+      traefik.http.services.tenancey.loadbalancer.server.port: "80"
     volumes:
       - ./public:/var/www/html/public:ro
       - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
@@ -82,7 +71,7 @@ services:
     environment:
       MYSQL_ROOT_PASSWORD: docker # local dev only; matches DB_PASSWORD for the PHP services
     ports:
-      - "3307:3306" # Mac 3307 -> container 3306 (the Mac's own MySQL keeps 3306)
+      - "127.0.0.1:3307:3306" # this Mac only (not the network): 3307 -> container 3306 (the Mac's own MySQL keeps 3306)
     volumes:
       - mysql-data:/var/lib/mysql
       - ./docker/mysql/init:/docker-entrypoint-initdb.d:ro
@@ -101,8 +90,14 @@ services:
 
   mailpit:
     image: axllent/mailpit:v1.29
-    ports:
-      - "8025:8025" # web inbox: http://localhost:8025 (SMTP 1025 stays inside the network)
+    networks: [default, edge] # inbox: https://mail.tenancey.test (SMTP 1025 stays inside the network)
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: edge
+      traefik.http.routers.tenancey-mail.rule: Host(`mail.tenancey.test`)
+      traefik.http.routers.tenancey-mail.entrypoints: websecure
+      traefik.http.routers.tenancey-mail.priority: "100"
+      traefik.http.services.tenancey-mail.loadbalancer.server.port: "8025"
     restart: unless-stopped
 
   minio:
@@ -112,9 +107,21 @@ services:
     environment:
       MINIO_ROOT_USER: minioadmin # local dev only, like MySQL's password
       MINIO_ROOT_PASSWORD: minioadmin
-    ports:
-      - "19010:9000" # S3 API: signed links in the browser go to localhost:19010
-      - "19011:9001" # dashboard: http://localhost:19011 (the Mac's MinIO keeps 19000/19001)
+      MINIO_BROWSER_REDIRECT_URL: https://minio.tenancey.test # the dashboard's public address
+    networks: [default, edge] # S3 API: https://s3.tenancey.test   dashboard: https://minio.tenancey.test
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: edge
+      traefik.http.routers.tenancey-s3.rule: Host(`s3.tenancey.test`)
+      traefik.http.routers.tenancey-s3.entrypoints: websecure
+      traefik.http.routers.tenancey-s3.priority: "100"
+      traefik.http.routers.tenancey-s3.service: tenancey-s3
+      traefik.http.services.tenancey-s3.loadbalancer.server.port: "9000"
+      traefik.http.routers.tenancey-minio.rule: Host(`minio.tenancey.test`)
+      traefik.http.routers.tenancey-minio.entrypoints: websecure
+      traefik.http.routers.tenancey-minio.priority: "100"
+      traefik.http.routers.tenancey-minio.service: tenancey-minio
+      traefik.http.services.tenancey-minio.loadbalancer.server.port: "9001"
     volumes:
       - minio-data:/data
     # No healthcheck: the image has no shell or client to run one (check from the Mac with curl).
@@ -126,11 +133,6 @@ services:
     profiles: [tools] # not started by `docker compose up`
     working_dir: /var/www/html
     command: sh -c "npm ci && npm run dev"
-    environment:
-      ASSET_BUILD_DIRECTORY: build-docker
-      VITE_REVERB_HOST: localhost # the browser reaches Reverb on the Mac's port 8082
-      VITE_REVERB_PORT: "8082"
-      VITE_REVERB_SCHEME: http
     volumes:
       - .:/var/www/html
       - node-modules:/var/www/html/node_modules # Linux packages; the Mac's node_modules stays untouched
@@ -140,3 +142,7 @@ volumes:
   redis-data:
   node-modules:
   minio-data:
+
+networks:
+  edge:
+    external: true # created by ~/Sites/docker-edge (start that first)

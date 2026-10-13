@@ -71,10 +71,6 @@
             "npm install --ignore-scripts",
             "npm run build"
         ],
-        "dev": [
-            "Composer\\Config::disableProcessTimeout",
-            "@php artisan dev"
-        ],
         "test": [
             "@php artisan config:clear --ansi @no_additional_args",
             "@php artisan test"

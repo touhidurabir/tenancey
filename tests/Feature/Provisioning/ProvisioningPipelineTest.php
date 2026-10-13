@@ -49,7 +49,7 @@ class ProvisioningPipelineTest extends TestCase
         Mail::assertSent(TenantCredentialsMail::class, function (TenantCredentialsMail $mail) {
             return $mail->hasTo('alice@acme.test')
                 && $mail->admin['password'] === 'Secret123!'
-                && str_contains($mail->render(), 'http://acme.tenancey.test/login');
+                && str_contains($mail->render(), 'https://acme.tenancey.test/login');
         });
     }
 

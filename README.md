@@ -71,185 +71,93 @@ Clone it, set it up, and build your own app on top of it, or read it to see how 
 
 ## Requirements
 
-| Requirement | Version | Notes |
+Local development runs entirely in Docker (`compose.yaml`): PHP-FPM, nginx, MySQL, Redis, Horizon,
+Reverb, the scheduler, Mailpit and MinIO. On the Mac you need:
+
+| Requirement | Notes |
+|---|---|
+| Docker Desktop with Compose v2 | Developed on Docker Desktop 4.94 |
+| A Traefik proxy on an external Docker network named `edge` | It terminates HTTPS and routes by host name, using the labels in `compose.yaml`. The author's setup (a shared proxy on a second loopback address, `127.0.0.2`) is described in [docs/DOCKER.md](docs/DOCKER.md#how-a-request-gets-in) |
+| A trusted certificate for `tenancey.test` and `*.tenancey.test` | For example from [mkcert](https://github.com/FiloSottile/mkcert), loaded by the proxy |
+| DNS for `tenancey.test` and `*.tenancey.test` | Pointing at the proxy, e.g. a dnsmasq rule `address=/tenancey.test/127.0.0.2` |
+
+What runs in the containers:
+
+| Component | Version | Notes |
 |---|---|---|
-| PHP | **8.4+** | Extensions: `pdo_mysql`, `redis` (phpredis), `pcntl` and `posix` (for Horizon), `mbstring`, `openssl`, `tokenizer`, `xml`, `ctype`, `fileinfo`, `exif` and `gd` (for medialibrary and its thumbnails), `intl` (recommended) |
-| Composer | 2.x | |
-| Laravel | 13.x | Installed by Composer |
+| PHP | **8.4** | `docker/php/`: `pdo_mysql`, `redis`, `pcntl`, `gd`, `exif` and the rest |
+| Laravel | 13.x | |
 | stancl/tenancy | 3.10.1+ | The first v3 release that supports Laravel 13 |
-| MySQL | 8.0+ (developed on 9.2) | MariaDB should also work. See [Database user](#database-user-privileges) |
-| Redis | 6+ (developed on 7.2) | Holds queues, cache and sessions, and is **required**: per-tenant cache and session isolation relies on Redis key prefixes |
-| Node.js | **22.12.0+** | Pinned in `.nvmrc`. Used only to build assets with Vite 8 and Tailwind 4 |
-| npm | 10+ | Ships with Node 22 |
-| A web server that serves wildcard subdomains | | Locally: [Laravel Valet](https://laravel.com/docs/valet) or [Herd](https://herd.laravel.com) on macOS. Elsewhere: nginx or Apache with wildcard DNS |
-| A process supervisor | | [Supervisor](http://supervisord.org/) runs Horizon. Without Horizon, nothing is ever provisioned |
-| SMTP catcher (dev) | | Mailpit, HELO, Mailtrap, or `MAIL_MAILER=log` |
-| File storage | | Local folders, or any S3-compatible service: [MinIO](https://min.io) locally, Amazon S3 in production. See [docs/STORAGE.md](docs/STORAGE.md) |
+| MySQL | 8.4 | See [Database user](#database-user-privileges) |
+| Redis | 7.4 | **Required**: per-tenant cache and session isolation relies on Redis key prefixes |
+| Node.js | 22.12 | Only builds assets (Vite 8, Tailwind 4), in a one-off container |
+| MinIO | Chainguard image | S3-compatible tenant buckets. Amazon S3 in production. See [docs/STORAGE.md](docs/STORAGE.md) |
+| Mailpit | 1.29 | Catches every mail |
 
-`php artisan serve` is **not enough**: it cannot serve `*.yourapp.test` subdomains, so tenants
-would be unreachable.
+## Setup (local, Docker)
 
-## Setup (local)
-
-These steps assume the central domain `tenancey.test`. Use any domain you like, but keep
-`APP_URL` and `CENTRAL_DOMAIN` in step 3 matching it.
-
-### 1. Clone and install
+These steps use the central domain `tenancey.test`. To use another, change `APP_URL`,
+`CENTRAL_DOMAIN`, `VITE_REVERB_HOST`, `MINIO_PUBLIC_ENDPOINT` and the host names in
+`compose.yaml`'s labels together.
 
 ```bash
 git clone https://github.com/touhidurabir/tenancey.git
 cd tenancey
-nvm use                # or install Node 22.12+ another way
-composer install
-npm install
+cp .env.example .env                 # Docker values
+# Set REVERB_APP_ID / REVERB_APP_KEY / REVERB_APP_SECRET to random strings now: the asset build
+# below bakes the key into the JS. APP_KEY is generated below; TENANT_DB_KEY may stay empty.
+docker compose up -d --build         # the edge network must exist first (your Traefik)
+docker compose exec app composer install
+docker compose exec app php artisan key:generate
+docker compose exec app php artisan migrate --seed --no-interaction   # admin@tenancey.test / password
+docker compose run --rm node         # build the assets
+docker compose restart horizon reverb scheduler   # they started before vendor/ and APP_KEY existed
 ```
 
-### 2. Serve the app and its subdomains
+The central (`tenancey`) and test (`tenancey_testing`) databases are created by the MySQL
+container on its first start (`docker/mysql/init/`). Change the seeded admin's password before
+using this anywhere real.
 
-With **Valet**:
-
-```bash
-valet link tenancey    # serves tenancey.test AND *.tenancey.test
-```
-
-Valet's DNS resolves every `*.test` name. **Herd** works the same way: link the directory.
-On Linux or Windows, see [Serving subdomains](#serving-subdomains-production-or-without-valet).
-
-### 3. Configure `.env`
-
-```bash
-cp .env.example .env
-php artisan key:generate
-```
-
-Then check these values:
+Important `.env` values:
 
 ```dotenv
-APP_URL=http://tenancey.test
+APP_URL=https://tenancey.test
 CENTRAL_DOMAIN=tenancey.test       # the landlord host; tenants live at {subdomain}.CENTRAL_DOMAIN
+SESSION_DOMAIN=null                # keep null: host-only cookies keep tenants' sessions apart
+SESSION_SECURE_COOKIE=true
 
-DB_DATABASE=tenancey               # the central (landlord) database
+DB_HOST=mysql                      # service names: the containers reach each other by name
 DB_USERNAME=root                   # needs CREATE/DROP DATABASE and CREATE USER, see below
-DB_PASSWORD=
-
 TENANT_DATABASE_PREFIX=tenancey_   # tenant databases are named tenancey_{uuid}
-TENANT_DB_USER_PREFIX=             # optional prefix for generated tenant DB usernames
 TENANT_DB_KEY=                     # optional separate key for tenant DB passwords; empty uses APP_KEY
 
-SESSION_DRIVER=redis
-SESSION_DOMAIN=null                # keep null: host-only cookies keep tenants' sessions apart
-CACHE_STORE=redis
-QUEUE_CONNECTION=redis
+FILESYSTEM_DISK=minio              # local, minio or s3: the disk NEW tenants get
+MINIO_ENDPOINT=http://minio:9000   # PHP → MinIO, inside Docker
+MINIO_PUBLIC_ENDPOINT=https://s3.tenancey.test   # what download links are signed for
 
-MAIL_HOST=127.0.0.1                # point at your mail catcher
-MAIL_PORT=2525
+VITE_REVERB_HOST=ws.tenancey.test  # the browser's WebSocket address (baked into the JS)
 ```
 
-If you share a MySQL server with other projects, choose a `TENANT_DATABASE_PREFIX` nobody else
-uses.
+Then:
 
-### 4. Create the central database, migrate and seed
-
-```bash
-mysql -uroot -e "CREATE DATABASE tenancey CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
-php artisan migrate
-php artisan db:seed      # central admin: admin@tenancey.test / password
-```
-
-Change the seeded admin's password before using this anywhere real.
-
-### 5. Build assets
-
-```bash
-npm run build   # production build, or `npm run dev` for one unminified development build
-```
-
-### 6. Run Horizon
-
-Provisioning and teardown are queued, so **Horizon must be running**. Without it, new tenants
-stay in "Provisioning" forever.
-
-- Quick start: run `php artisan horizon` in a terminal.
-- Alternatively, `composer dev` runs the dev server, Horizon, logs and Vite HMR together.
-- To keep Horizon running permanently, use Supervisor: see
-  [deploy/supervisor/README.md](deploy/supervisor/README.md). The file in
-  `deploy/supervisor/local/` contains absolute paths, so edit them for your machine.
-
-Run only one Horizon at a time.
-
-### 7. File storage (local or MinIO)
-
-`FILESYSTEM_DISK=local` needs nothing more: each tenant's files go to a folder under
-`storage/app/buckets/`. To use MinIO (S3-compatible) instead:
-
-1. `brew install minio`. **Don't** start it with `brew services`: brew runs it on port 9000,
-   which Homebrew PHP-FPM's default pool already holds. Use a launch agent on ports 19000
-   (API) and 19001 (dashboard) instead; [docs/STORAGE.md](docs/STORAGE.md#5-minio-on-the-mac)
-   has the commands.
-2. In `.env`:
-
-   ```dotenv
-   FILESYSTEM_DISK=minio
-   MINIO_ENDPOINT=http://127.0.0.1:19000
-   MINIO_KEY=minioadmin
-   MINIO_SECRET=minioadmin
-   MINIO_REGION=us-east-1
-   TENANT_BUCKET_PREFIX=tenancey-     # buckets are {prefix}{uuid}; must be globally unique on S3
-   ```
-
-3. Restart Horizon (`php artisan horizon:terminate`). New tenants get a MinIO bucket; existing
-   ones keep the disk they were created with.
-
-Upgrading an install made before buckets existed: run `php artisan migrate`, then
-`php artisan tenants:migrate`, then `php artisan tenants:create-buckets` (safe to re-run), and
-restart Horizon. Existing tenants are recorded on `local` and keep working.
-In production, set `FILESYSTEM_DISK=s3` and the `AWS_*` keys.
-
-### 8. Try it
-
-1. Open http://tenancey.test and sign in as `admin@tenancey.test` / `password`.
-2. Create a tenant, for example subdomain `acme`. The tenant page shows each provisioning step as
-   it runs.
-3. When it's Ready, open http://acme.tenancey.test. Sign in with the tenant admin you entered, or
+1. Open https://tenancey.test and sign in as `admin@tenancey.test` / `password`.
+2. Create a tenant, for example subdomain `acme`. The tenant page shows each provisioning step live.
+3. When it's Ready, open https://acme.tenancey.test. Sign in with the tenant admin you entered, or
    use **Impersonate** from the central tenant page.
 
-Other central pages:
-
-| Page | Path |
+| Page | Address |
 |---|---|
-| Horizon dashboard | http://tenancey.test/horizon |
-| Logs | http://tenancey.test/log-viewer |
-| Audit log | http://tenancey.test/audit |
+| Horizon dashboard | https://tenancey.test/horizon |
+| Logs | https://tenancey.test/log-viewer |
+| Audit log | https://tenancey.test/audit |
+| Mail inbox (Mailpit) | https://mail.tenancey.test |
+| MinIO dashboard | https://minio.tenancey.test (`minioadmin` / `minioadmin`) |
 
-### 9. Scheduler (optional locally, needed in production)
+Daily commands, the services and troubleshooting are in [docs/DOCKER.md](docs/DOCKER.md).
 
-Expired impersonation tokens are pruned by the scheduled `model:prune`:
-
-```bash
-php artisan schedule:work    # local
-# production cron: * * * * * php /path/to/artisan schedule:run >> /dev/null 2>&1
-```
-
-## Run with Docker (alternative to Valet)
-
-The whole stack also runs in Docker, side by side with a Valet setup in the same folder:
-PHP-FPM, nginx, MySQL, Redis, Horizon, Reverb, the scheduler and Mailpit. It needs Docker
-Desktop and an `.env` with the keys from [step 3](#3-configure-env). Docker's hosts, database and
-ports are set in `compose.yaml` and override `.env`.
-
-```bash
-docker compose up -d --build
-docker compose exec app composer install           # if vendor/ doesn't exist yet
-docker compose exec app php artisan migrate --seed --no-interaction
-docker compose run --rm node                       # build assets
-docker compose restart horizon reverb scheduler    # if they started before vendor/ existed
-```
-
-Then open http://tenancey.localhost:8000 (mail at http://localhost:8025, file storage dashboard at
-http://localhost:19011, `minioadmin` / `minioadmin`). Docker's tenants store files on its own
-MinIO container. Run the tests with
-`docker compose exec app php artisan test`. Ports, daily commands and troubleshooting are in
-[docs/DOCKER.md](docs/DOCKER.md).
+Upgrading an install made before buckets existed: run `php artisan migrate`, then
+`php artisan tenants:migrate`, then `php artisan tenants:create-buckets` (safe to re-run), inside
+the `app` container, and restart Horizon. Existing tenants are recorded on `local` and keep working.
 
 ## Database user privileges
 
@@ -267,25 +175,26 @@ Locally, `root` is fine.
 - **With** a dedicated user (a checkbox on the create form), that user is granted access only to
   its own tenant's database.
 
-## Serving subdomains (production, or without Valet)
+## Serving subdomains (production)
 
 Laravel separates central and tenant traffic **by host name**, so every subdomain must reach the
 same `public/index.php`:
 
 1. **DNS:** an `A` record for `yourapp.com` and a wildcard record for `*.yourapp.com`, both
-   pointing at your server. Locally on Linux, use `dnsmasq`
-   (`address=/yourapp.test/127.0.0.1`), or add `/etc/hosts` lines for each tenant.
+   pointing at your server.
 2. **TLS:** a wildcard certificate for `*.yourapp.com`. With Let's Encrypt, that requires a
    DNS-01 challenge.
-3. **Web server:** nginx example:
+3. **Web server or proxy:** every host must reach `public/index.php`. nginx example:
    ```nginx
    server_name yourapp.com *.yourapp.com;
    root /var/www/tenancey/public;
    ```
+   Behind a TLS-terminating proxy, list the proxy's address in `trustProxies` (`bootstrap/app.php`
+   trusts any proxy, which is only safe when nothing else can reach the app).
 4. **`.env`:** `APP_URL=https://yourapp.com`, `CENTRAL_DOMAIN=yourapp.com`.
-5. **Workers:** run Horizon under Supervisor
-   (`deploy/supervisor/tenancey-horizon.conf`), add the scheduler cron, and run
-   `php artisan horizon:terminate` after every deploy.
+5. **Workers:** run Horizon and Reverb as long-running processes (containers, or Supervisor with
+   `deploy/supervisor/*.conf`), run the scheduler (`schedule:work`, or a cron with
+   `schedule:run`), and restart Horizon after every deploy.
 
 ## Running the tests
 
@@ -300,27 +209,27 @@ prefixes. The settings are in `phpunit.xml`:
 | Redis databases | 13–15 |
 | Tenant bucket prefix | `tenanceytest-` |
 
-Create the test database once, then run the suite:
+The MySQL container creates the test database. Run the suite inside the `app` container:
 
 ```bash
-mysql -uroot -e "CREATE DATABASE tenancey_testing"
-php artisan test
+docker compose exec app php artisan test --compact
 ```
 
 The test case refuses to run against any other database. It cleans up the test-prefixed tenant
 resources before and after each test.
 
-The `minio` group (`php artisan test --group=minio`) talks to the MinIO in `.env` and is skipped
-when MinIO isn't running.
+The `minio` group (`--group=minio`) talks to the `minio` container and is skipped when it isn't
+running.
 
 ## How it fits together
 
 | Read this | For |
 |---|---|
 | [docs/ROUTING.md](docs/ROUTING.md) | Central vs tenant routing: how `acme.tenancey.test` becomes a tenant, the middleware chain, the bootstrappers, and sessions |
-| [docs/STORAGE.md](docs/STORAGE.md) | File storage: `FILESYSTEM_DISK`, one bucket per tenant, signed downloads, MinIO on the Mac, S3 in production |
+| [docs/DOCKER.md](docs/DOCKER.md) | The development setup: how a request gets in, URLs, settings, services, daily commands, troubleshooting |
+| [docs/STORAGE.md](docs/STORAGE.md) | File storage: `FILESYSTEM_DISK`, one bucket per tenant, signed downloads, MinIO, S3 in production |
 | [docs/QUEUES.md](docs/QUEUES.md) | Driver vs queue connection vs queue, the Redis connections, Horizon supervisors and workers, and timeouts |
-| [deploy/supervisor/README.md](deploy/supervisor/README.md) | Running Horizon under Supervisor |
+| [deploy/supervisor/README.md](deploy/supervisor/README.md) | Running Horizon and Reverb under Supervisor (not used locally any more) |
 | [docs/superpowers/specs/](docs/superpowers/specs/) | The original design for tenant bootstrapping |
 | [CLAUDE.md](CLAUDE.md) | Condensed project rules: tenant identity, provisioning job rules, the resource guard, and pitfalls |
 
@@ -339,12 +248,12 @@ Key places in the code:
 
 | Symptom | Cause |
 |---|---|
-| A tenant stays in "Provisioning" | Horizon isn't running |
-| `acme.tenancey.test` doesn't resolve | The site isn't linked in Valet or Herd, or there's no wildcard DNS |
+| A tenant stays in "Provisioning" | Horizon isn't running: `docker compose ps` |
+| `acme.tenancey.test` doesn't resolve | No wildcard DNS for `*.tenancey.test` |
 | Every tenant URL shows "No such workspace" | `CENTRAL_DOMAIN` doesn't match the host you are using |
 | Signed into one tenant, you appear signed into another | `SESSION_DOMAIN` was set to `.yourapp.test`. Set it back to `null` |
 | Pages try to load assets from `localhost:517x` | A stale `public/hot` file was left by a killed Vite HMR server. Delete it |
-| Job changes have no effect | Workers keep old code in memory. Run `php artisan horizon:terminate` |
+| Job changes have no effect | Workers keep old code in memory. Run `docker compose restart horizon` |
 
 ## Credits
 
