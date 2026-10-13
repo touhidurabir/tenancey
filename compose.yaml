@@ -1,32 +1,7 @@
 # Local development for tenancey. Guide: docs/DOCKER.md
 # App: https://tenancey.test   Tenants: https://{subdomain}.tenancey.test (through docker-edge)
 name: tenancey
-
-# Docker-only settings. They win over .env because Laravel never overwrites a variable that is
-# already set in the environment. Secrets (APP_KEY, TENANT_DB_KEY, REVERB_APP_*) stay in .env.
-x-laravel-env: &laravel-env
-  APP_URL: https://tenancey.test
-  CENTRAL_DOMAIN: tenancey.test
-  SESSION_SECURE_COOKIE: "true"
-  DB_HOST: mysql
-  DB_PORT: "3306"
-  DB_USERNAME: root
-  DB_PASSWORD: docker
-  REDIS_HOST: redis
-  REDIS_PORT: "6379"
-  MAIL_HOST: mailpit
-  MAIL_PORT: "1025"
-  REVERB_HOST: reverb
-  REVERB_PORT: "8080"
-  REVERB_SCHEME: http
-  REVERB_SERVER_HOST: 0.0.0.0
-  REVERB_SERVER_PORT: "8080"
-  ASSET_BUILD_DIRECTORY: build-docker
-  FILESYSTEM_DISK: minio # new tenants; existing ones keep the disk they were created on
-  MINIO_ENDPOINT: http://minio:9000 # PHP containers reach MinIO by its service name
-  MINIO_PUBLIC_ENDPOINT: https://s3.tenancey.test # signed links: browser → Traefik → minio:9000
-  MINIO_KEY: minioadmin
-  MINIO_SECRET: minioadmin
+# Laravel settings live in .env (Docker values only).
 
 # Shared by the four PHP services: same image, same code, same settings.
 x-php: &php
@@ -34,7 +9,6 @@ x-php: &php
   image: tenancey-php:dev
   volumes:
     - .:/var/www/html
-  environment: *laravel-env
   depends_on:
     mysql:
       condition: service_healthy
@@ -159,11 +133,6 @@ services:
     profiles: [tools] # not started by `docker compose up`
     working_dir: /var/www/html
     command: sh -c "npm ci && npm run dev"
-    environment:
-      ASSET_BUILD_DIRECTORY: build-docker
-      VITE_REVERB_HOST: ws.tenancey.test # browser → Traefik → reverb:8080
-      VITE_REVERB_PORT: "443"
-      VITE_REVERB_SCHEME: https
     volumes:
       - .:/var/www/html
       - node-modules:/var/www/html/node_modules # Linux packages; the Mac's node_modules stays untouched
