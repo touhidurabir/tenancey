@@ -72,14 +72,17 @@ Clone it, set it up, and build your own app on top of it, or read it to see how 
 ## Requirements
 
 Local development runs entirely in Docker (`compose.yaml`): PHP-FPM, nginx, MySQL, Redis, Horizon,
-Reverb, the scheduler, Mailpit and MinIO. On the Mac you need:
+Reverb, the scheduler, Mailpit and MinIO. On your machine you need only:
 
 | Requirement | Notes |
 |---|---|
-| Docker Desktop with Compose v2 | Developed on Docker Desktop 4.94 |
-| A Traefik proxy on an external Docker network named `edge` | It terminates HTTPS and routes by host name, using the labels in `compose.yaml`. The author's setup (a shared proxy on a second loopback address, `127.0.0.2`) is described in [docs/DOCKER.md](docs/DOCKER.md#how-a-request-gets-in) |
-| A trusted certificate for `tenancey.test` and `*.tenancey.test` | For example from [mkcert](https://github.com/FiloSottile/mkcert), loaded by the proxy |
-| DNS for `tenancey.test` and `*.tenancey.test` | Pointing at the proxy, e.g. a dnsmasq rule `address=/tenancey.test/127.0.0.2` |
+| Docker Desktop with Compose v2 | Developed and checked on Docker Desktop 4.94 (macOS). docker-edge mode needs Compose 2.24+ (`!reset`). Native Docker Engine on Linux is untested: the PHP containers write to the bind-mounted `storage/` as different users, which may need `chmod` there |
+| bash | Runs `bin/setup`. macOS and Linux have it; on Windows use WSL |
+| Chrome or Firefox | They resolve `*.localhost` (tenant addresses) by themselves. Safari can't |
+
+**Optional: HTTPS on `tenancey.test`** instead of `localhost` ports. This needs a Traefik proxy on
+an external Docker network named `edge`, a trusted certificate (e.g. [mkcert](https://github.com/FiloSottile/mkcert))
+and DNS for `*.tenancey.test`. See [docs/DOCKER.md](docs/DOCKER.md#two-modes).
 
 What runs in the containers:
 
@@ -96,35 +99,32 @@ What runs in the containers:
 
 ## Setup (local, Docker)
 
-These steps use the central domain `tenancey.test`. To use another, change `APP_URL`,
-`CENTRAL_DOMAIN`, `VITE_REVERB_HOST`, `MINIO_PUBLIC_ENDPOINT` and the host names in
-`compose.yaml`'s labels together.
-
 ```bash
 git clone https://github.com/touhidurabir/tenancey.git
 cd tenancey
-cp .env.example .env                 # Docker values
-# Set REVERB_APP_ID / REVERB_APP_KEY / REVERB_APP_SECRET to random strings now: the asset build
-# below bakes the key into the JS. APP_KEY is generated below; TENANT_DB_KEY may stay empty.
-docker compose up -d --build         # the edge network must exist first (your Traefik)
-docker compose exec app composer install
-docker compose exec app php artisan key:generate
-docker compose exec app php artisan migrate --seed --no-interaction   # admin@tenancey.test / password
-docker compose run --rm node         # build the assets
-docker compose restart horizon reverb scheduler   # they started before vendor/ and APP_KEY existed
+bin/setup
 ```
+
+`bin/setup` creates `.env` from `.env.example`, starts the containers, installs the PHP packages,
+fills the empty keys (`APP_KEY`, Reverb's id/key/secret), migrates and seeds the central database,
+builds the assets, and starts Horizon, Reverb and the scheduler. It's safe to run again; it never
+overwrites `.env` or a key that's set. What each step does: [docs/DOCKER.md](docs/DOCKER.md#first-run-of-the-project).
 
 The central (`tenancey`) and test (`tenancey_testing`) databases are created by the MySQL
 container on its first start (`docker/mysql/init/`). Change the seeded admin's password before
 using this anywhere real.
 
-Important `.env` values:
+**Ports already in use?** Change them in `.env` (the "Published ports" block) together with the URL
+that uses each one (e.g. `APP_PORT=8001` and `APP_URL=http://localhost:8001`), then run
+`bin/setup` again.
+
+Important `.env` values (port mode, the default):
 
 ```dotenv
-APP_URL=https://tenancey.test
-CENTRAL_DOMAIN=tenancey.test       # the landlord host; tenants live at {subdomain}.CENTRAL_DOMAIN
+APP_URL=http://localhost:8000
+CENTRAL_DOMAIN=localhost           # the landlord host; tenants live at {subdomain}.CENTRAL_DOMAIN
 SESSION_DOMAIN=null                # keep null: host-only cookies keep tenants' sessions apart
-SESSION_SECURE_COOKIE=true
+SESSION_SECURE_COOKIE=false        # true in docker-edge mode (https)
 
 DB_HOST=mysql                      # service names: the containers reach each other by name
 DB_USERNAME=root                   # needs CREATE/DROP DATABASE and CREATE USER, see below
@@ -133,25 +133,26 @@ TENANT_DB_KEY=                     # optional separate key for tenant DB passwor
 
 FILESYSTEM_DISK=minio              # local, minio or s3: the disk NEW tenants get
 MINIO_ENDPOINT=http://minio:9000   # PHP → MinIO, inside Docker
-MINIO_PUBLIC_ENDPOINT=https://s3.tenancey.test   # what download links are signed for
+MINIO_PUBLIC_ENDPOINT=http://localhost:9000   # what download links are signed for
 
-VITE_REVERB_HOST=ws.tenancey.test  # the browser's WebSocket address (baked into the JS)
+VITE_REVERB_HOST=localhost         # the browser's WebSocket address (baked into the JS)
+VITE_REVERB_PORT=8080
 ```
 
 Then:
 
-1. Open https://tenancey.test and sign in as `admin@tenancey.test` / `password`.
+1. Open http://localhost:8000 and sign in as `admin@tenancey.test` / `password`.
 2. Create a tenant, for example subdomain `acme`. The tenant page shows each provisioning step live.
-3. When it's Ready, open https://acme.tenancey.test. Sign in with the tenant admin you entered, or
-   use **Impersonate** from the central tenant page.
+3. When it's Ready, open http://acme.localhost:8000 (Chrome or Firefox). Sign in with the tenant
+   admin you entered, or use **Impersonate** from the central tenant page.
 
-| Page | Address |
-|---|---|
-| Horizon dashboard | https://tenancey.test/horizon |
-| Logs | https://tenancey.test/log-viewer |
-| Audit log | https://tenancey.test/audit |
-| Mail inbox (Mailpit) | https://mail.tenancey.test |
-| MinIO dashboard | https://minio.tenancey.test (`minioadmin` / `minioadmin`) |
+| Page | Port mode (default) | docker-edge mode |
+|---|---|---|
+| Horizon dashboard | http://localhost:8000/horizon | https://tenancey.test/horizon |
+| Logs | http://localhost:8000/log-viewer | https://tenancey.test/log-viewer |
+| Audit log | http://localhost:8000/audit | https://tenancey.test/audit |
+| Mail inbox (Mailpit) | http://localhost:8025 | https://mail.tenancey.test |
+| MinIO dashboard (`minioadmin` / `minioadmin`) | http://localhost:9001 | https://minio.tenancey.test |
 
 Daily commands, the services and troubleshooting are in [docs/DOCKER.md](docs/DOCKER.md).
 
@@ -249,7 +250,10 @@ Key places in the code:
 | Symptom | Cause |
 |---|---|
 | A tenant stays in "Provisioning" | Horizon isn't running: `docker compose ps` |
-| `acme.tenancey.test` doesn't resolve | No wildcard DNS for `*.tenancey.test` |
+| `acme.localhost:8000` doesn't open | Safari can't resolve `*.localhost`. Use Chrome or Firefox |
+| `bin/setup` or `docker compose up` fails with "port is already allocated" | Another program uses that port. Change it in `.env`'s "Published ports" block, with the URL that uses it |
+| Live updates don't arrive after changing a `VITE_*` value or a port | The JS still has the old Reverb address baked in. Rebuild: `docker compose run --rm node` |
+| `acme.tenancey.test` doesn't resolve (docker-edge mode) | No wildcard DNS for `*.tenancey.test` |
 | Every tenant URL shows "No such workspace" | `CENTRAL_DOMAIN` doesn't match the host you are using |
 | Signed into one tenant, you appear signed into another | `SESSION_DOMAIN` was set to `.yourapp.test`. Set it back to `null` |
 | Pages try to load assets from `localhost:517x` | A stale `public/hot` file was left by a killed Vite HMR server. Delete it |

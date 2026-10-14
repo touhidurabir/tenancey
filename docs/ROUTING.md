@@ -7,7 +7,11 @@ How one Laravel app serves both the landlord site (`tenancey.test`) and every te
 
 This happens before Laravel runs:
 
-- **Locally (Docker):** a dnsmasq rule sends `tenancey.test` and every `*.tenancey.test` to
+- **Locally, port mode (the default):** the browser resolves `localhost` and every `*.localhost` to
+  the machine itself, and nginx is published on `localhost:8000`. `CENTRAL_DOMAIN=localhost`, so
+  `acme.localhost:8000` is tenant `acme`. The port never matters: tenancy reads the host without it,
+  and `Tenant::url()` adds back the port from `APP_URL`. No proxy, so URLs stay `http://`.
+- **Locally, docker-edge mode:** a dnsmasq rule sends `tenancey.test` and every `*.tenancey.test` to
   `127.0.0.2`. The Traefik proxy there (docker-edge, see [DOCKER.md](DOCKER.md)) terminates HTTPS
   and routes them all to tenancey's nginx, which sends every host to the same `public/index.php`.
   So `tenancey.test`, `acme.tenancey.test` and `beta.tenancey.test` all reach one app. `ws.`,

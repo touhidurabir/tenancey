@@ -90,15 +90,17 @@ never writes into the shared central folder.
 
 Development uses the `minio` container (`docs/DOCKER.md` has the service details):
 - PHP talks to it as **`http://minio:9000`** (`MINIO_ENDPOINT`): bucket creation, uploads, deletes.
-- The browser reaches it as **`https://s3.tenancey.test`** (`MINIO_PUBLIC_ENDPOINT`), through the
-  Traefik proxy. Links are signed for that address: a signature covers the host, and the browser
-  can't reach `minio`. Traefik passes the `Host` header on unchanged, so MinIO checks the signature
-  against the host it was made for.
-- Dashboard: **https://minio.tenancey.test**, `minioadmin` / `minioadmin`. Data: the `minio-data`
+- The browser reaches it at `MINIO_PUBLIC_ENDPOINT`: **`http://localhost:9000`** in port mode (the
+  published port), **`https://s3.tenancey.test`** in docker-edge mode (through Traefik). Links are
+  signed for that address: a signature covers the host, and the browser can't reach `minio`. The
+  `Host` header reaches MinIO unchanged, so it checks the signature against the host it was made for.
+- Dashboard: **http://localhost:9001** (port mode) or **https://minio.tenancey.test** (docker-edge
+  mode), `minioadmin` / `minioadmin`. Data: the `minio-data`
   volume.
 
 ```bash
-curl -s -o /dev/null -w '%{http_code}\n' https://s3.tenancey.test/minio/health/live   # 200
+curl -s -o /dev/null -w '%{http_code}\n' http://localhost:9000/minio/health/live      # 200 (port mode)
+curl -s -o /dev/null -w '%{http_code}\n' https://s3.tenancey.test/minio/health/live   # 200 (docker-edge mode)
 ```
 
 **The Mac's own MinIO** (`127.0.0.1:19000`, launch agent `local.minio`) is what the old Valet setup
