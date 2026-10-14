@@ -124,7 +124,15 @@ return [
         AuthorizeLogViewer::class,
     ],
 
-    'api_stateful_domains' => env('LOG_VIEWER_API_STATEFUL_DOMAINS') ? explode(',', env('LOG_VIEWER_API_STATEFUL_DOMAINS')) : [env('CENTRAL_DOMAIN')],
+    // The API gets a session only when the page's Referer matches one of these. A Referer keeps
+    // the port (port mode: localhost:8000), so APP_URL's host:port is listed with the central domain.
+    'api_stateful_domains' => env('LOG_VIEWER_API_STATEFUL_DOMAINS')
+        ? explode(',', env('LOG_VIEWER_API_STATEFUL_DOMAINS'))
+        : array_values(array_unique(array_filter([
+            env('CENTRAL_DOMAIN'),
+            parse_url((string) env('APP_URL'), PHP_URL_HOST)
+                .(parse_url((string) env('APP_URL'), PHP_URL_PORT) ? ':'.parse_url((string) env('APP_URL'), PHP_URL_PORT) : ''),
+        ]))),
 
     /*
     |--------------------------------------------------------------------------

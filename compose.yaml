@@ -8,6 +8,10 @@ name: tenancey
 x-php: &php
   build: docker/php
   image: tenancey-php:dev
+  # tini as PID 1, passing signals on to PHP. Without it PHP is PID 1, and Linux drops a SIGTERM
+  # sent to PID 1 before PHP has installed its handler: a stop right after a start then waits the
+  # whole stop_grace_period (660s for horizon) and ends in SIGKILL.
+  init: true
   volumes:
     - .:/var/www/html
   depends_on:
