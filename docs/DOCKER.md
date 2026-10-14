@@ -1,28 +1,83 @@
 # Docker (local development)
 
-Tenancey runs only in Docker. The browser reaches it over HTTPS through a shared Traefik proxy,
-**docker-edge**, which lives in its own folder (`~/Sites/docker-edge`) and can serve other Docker
-projects too.
+Tenancey runs only in Docker, in one of two modes:
+- **Port mode (default):** `compose.yaml` alone. Each service is published on a `localhost` port.
+  Plain http, no proxy, no DNS or certificates. A fresh clone runs with `bin/setup`.
+- **docker-edge mode:** `compose.yaml` plus `compose.edge.yaml`. HTTPS on `tenancey.test` through
+  a shared Traefik proxy, **docker-edge**, which lives in its own folder (`~/Sites/docker-edge`)
+  and can serve other Docker projects too. The author's Mac runs this mode.
 
-| What | Address |
-|---|---|
-| Central app | `https://tenancey.test` (Horizon at `/horizon`, logs at `/log-viewer`, audit at `/audit`) |
-| A tenant | `https://{subdomain}.tenancey.test` |
-| WebSockets (Reverb) | `wss://ws.tenancey.test` |
-| File links (MinIO API) | `https://s3.tenancey.test` |
-| MinIO dashboard | `https://minio.tenancey.test` (`minioadmin` / `minioadmin`) |
-| Mail inbox (Mailpit) | `https://mail.tenancey.test` |
-| MySQL from the Mac | `127.0.0.1:3307`, user `root`, password `docker` |
-| Traefik dashboard | `http://127.0.0.2:18090` |
+| What | Port mode (default) | docker-edge mode |
+|---|---|---|
+| Central app (Horizon `/horizon`, logs `/log-viewer`, audit `/audit`) | `http://localhost:8000` | `https://tenancey.test` |
+| A tenant | `http://{subdomain}.localhost:8000` | `https://{subdomain}.tenancey.test` |
+| WebSockets (Reverb) | `ws://localhost:8080` | `wss://ws.tenancey.test` |
+| File links (MinIO API) | `http://localhost:9000` | `https://s3.tenancey.test` |
+| MinIO dashboard (`minioadmin` / `minioadmin`) | `http://localhost:9001` | `https://minio.tenancey.test` |
+| Mail inbox (Mailpit) | `http://localhost:8025` | `https://mail.tenancey.test` |
+| MySQL from the host (`root` / `docker`) | `127.0.0.1:3307` | `127.0.0.1:3307` |
+| Traefik dashboard | – | `http://127.0.0.2:18090` |
 
-`http://` addresses redirect to `https://`. `s3`, `minio`, `ws` and `mail` are reserved subdomains
+Tenant pages on `*.localhost` need Chrome or Firefox (they resolve those names themselves). Safari
+uses the system resolver, which doesn't. In docker-edge mode, `http://` addresses redirect to
+`https://`. `s3`, `minio`, `ws` and `mail` are reserved subdomains
 (`StoreTenantRequest::RESERVED_SUBDOMAINS`), so no tenant can take them.
 
-Designs: `docs/superpowers/specs/2026-10-07-docker-local-dev-design.md` (the containers) and
-`docs/superpowers/specs/2026-10-13-docker-only-https-design.md` (HTTPS, docker-edge).
+Designs: `docs/superpowers/specs/2026-10-07-docker-local-dev-design.md` (the containers),
+`docs/superpowers/specs/2026-10-13-docker-only-https-design.md` (HTTPS, docker-edge) and
+`docs/superpowers/specs/2026-10-14-standalone-port-mode-design.md` (the two modes, `bin/setup`).
+
+## Two modes
+
+**Port mode** is what `compose.yaml` gives on its own. These ports are published, each bound to
+`127.0.0.1` (this machine only) and read from `.env`:
+
+| Service | `.env` variable | Default | Container port |
+|---|---|---|---|
+| nginx (central and tenants) | `APP_PORT` | 8000 | 80 |
+| reverb | `FORWARD_REVERB_PORT` | 8080 | 8080 |
+| mailpit (inbox) | `FORWARD_MAILPIT_DASHBOARD_PORT` | 8025 | 8025 |
+| minio (S3 API) | `FORWARD_MINIO_PORT` | 9000 | 9000 |
+| minio (dashboard) | `FORWARD_MINIO_CONSOLE_PORT` | 9001 | 9001 |
+| mysql | `FORWARD_DB_PORT` | 3307 | 3306 |
+
+A port that's taken on your machine: change the variable **and** the URL that contains it
+(`APP_URL`, `VITE_REVERB_PORT`, `MINIO_PUBLIC_ENDPOINT`, `MINIO_CONSOLE_URL`), then `bin/setup`
+(or `docker compose up -d` and `docker compose run --rm node`).
+
+**docker-edge mode** lays `compose.edge.yaml` over `compose.yaml`. The override:
+- puts nginx, reverb, mailpit and minio on the external `edge` network as well;
+- adds the Traefik labels (host names hard-coded to `tenancey.test`);
+- removes their published ports with `ports: !reset []` (MySQL keeps `127.0.0.1:3307`);
+- sets MinIO's dashboard address to `https://minio.tenancey.test`.
+
+It's turned on by one line in `.env`, which Compose reads itself (Laravel ignores it):
+```
+COMPOSE_FILE=compose.yaml:compose.edge.yaml
+```
+Every `docker compose` command then uses both files, with no `-f` flags. `docker compose config`
+prints the merged result.
+
+**Switching modes:** use the values in `.env.example`'s commented docker-edge block (or the
+port-mode values above it), including `COMPOSE_FILE`, then:
+```bash
+docker compose up -d            # recreates what changed
+docker compose run --rm node    # VITE_* (the browser's Reverb address) are baked into the JS
+```
+docker-edge mode needs docker-edge running first (see below).
 
 ## How a request gets in
 
+**Port mode:**
+```
+browser ── http://acme.localhost:8000   (the browser resolves *.localhost to this machine)
+   ▼
+127.0.0.1:8000 (published port) ──► nginx:80 ──► app:9000 (PHP-FPM) ──► Laravel
+```
+No proxy, so no `X-Forwarded-*` headers: Laravel builds `http://` URLs with the port from the
+request.
+
+**docker-edge mode:**
 ```
 browser ── https://acme.tenancey.test
    │ DNS: dnsmasq answers tenancey.test and *.tenancey.test with 127.0.0.2
@@ -41,7 +96,7 @@ traefik (docker-edge): HTTPS ends here, mkcert certificate; picks a router by ho
 - **socat** exists because Docker Desktop (4.89+) can't publish ports below 1024 on one specific
   address. A root launch daemon holds `127.0.0.2:80/443` and passes the bytes to Traefik's
   published `18080/18443`.
-- **Traefik** reads its routes from labels on tenancey's containers (`compose.yaml`). The tenant
+- **Traefik** reads its routes from labels on tenancey's containers (`compose.edge.yaml`). The tenant
   wildcard router has priority 1 and the named side services 100. Otherwise the wildcard, whose
   rule is longest, would win `ws.`, `s3.` and the others.
 - **Laravel trusts the proxy** (`trustProxies(at: '*')` in `bootstrap/app.php`). Traefik sends
@@ -52,10 +107,12 @@ traefik (docker-edge): HTTPS ends here, mkcert certificate; picks a router by ho
 
 ## One-time Mac setup
 
+**docker-edge mode only.** Port mode needs none of this.
+
 All of it is described, with undo steps, in `~/Sites/docker-edge/README.md`. docker-edge is a
 separate folder (its own repo), not part of this one. Without it, any Traefik v3 that creates an
 external network named `edge`, serves a trusted certificate for `tenancey.test` + `*.tenancey.test`,
-and reads Docker labels will do: `compose.yaml`'s labels are written for that.
+and reads Docker labels will do: `compose.edge.yaml`'s labels are written for that.
 1. The `127.0.0.2` address and the two socat forwarders: launch daemons in
    `/Library/LaunchDaemons` (sources in `~/Sites/docker-edge/mac/`). Needs `brew install socat`.
 2. `brew install mkcert` and `mkcert -install` (the local certificate authority, trusted once).
@@ -63,41 +120,51 @@ and reads Docker labels will do: `compose.yaml`'s labels are written for that.
    `mkcert -cert-file certs/tenancey.test.pem -key-file certs/tenancey.test-key.pem tenancey.test "*.tenancey.test"`
    (run in `~/Sites/docker-edge`).
 3. docker-edge: `cd ~/Sites/docker-edge && docker compose up -d`. **Start it before tenancey**:
-   tenancey's `compose.yaml` joins its `edge` network (`external: true`).
+   `compose.edge.yaml` joins its `edge` network (`external: true`).
 4. DNS: `~/.config/valet/dnsmasq.d/tenancey.conf` with `address=/tenancey.test/127.0.0.2`, then
    `sudo brew services restart dnsmasq`. It is more specific than Valet's `.test` rule, so it wins.
 
 ## First run of the project
 
 ```bash
-cp .env.example .env
-# Set REVERB_APP_ID, REVERB_APP_KEY and REVERB_APP_SECRET to random strings now: the browser's
-# copy (VITE_REVERB_APP_KEY) is baked into the JS by the asset build below.
-docker compose up -d --build                      # needs docker-edge's `edge` network (above)
-docker compose exec app composer install
-docker compose exec app php artisan key:generate
-docker compose exec app php artisan migrate --seed --no-interaction
-docker compose run --rm node                      # build the assets
-docker compose restart horizon reverb scheduler   # they started before vendor/ and APP_KEY existed
+bin/setup
 ```
-Then open https://tenancey.test and sign in as `admin@tenancey.test` / `password`. `TENANT_DB_KEY`
-can stay empty (it falls back to `APP_KEY`).
+It needs only Docker and bash; every PHP and Node step runs in a container. In order:
+1. Checks that `docker compose` works.
+2. Copies `.env.example` to `.env`, only if there's no `.env`.
+3. Starts MySQL, Redis, MinIO, Mailpit, `app` and nginx, and waits for MySQL to be healthy
+   (`up -d --wait`). Horizon, Reverb and the scheduler wait: they exit without `vendor/`.
+4. `composer install` in `app`.
+5. Fills **empty** keys only: `APP_KEY` (`key:generate`) and `REVERB_APP_ID` / `_KEY` / `_SECRET`
+   (random values). A key that's set is never changed.
+6. `migrate --force --seed` (the seeder uses `firstOrCreate`).
+7. Builds the assets (`docker compose run --rm node`), baking in the `VITE_*` values.
+8. Starts everything (`up -d`) and restarts Horizon and Reverb, so a re-run picks up new code.
+9. Prints the addresses and the admin login (`admin@tenancey.test` / `password`).
+
+It's safe to run again: after a failure, fix the cause and re-run. It honours `COMPOSE_FILE` and
+`COMPOSE_PROJECT_NAME` from `.env`, so it works the same in docker-edge mode (start docker-edge
+first). `TENANT_DB_KEY` can stay empty (it falls back to `APP_KEY`).
 
 ## Settings: `.env` only
 
-`.env` holds Docker's values and is the only source of Laravel settings. The containers bind-mount
-the project, so they read it directly. `compose.yaml` only sets what configures MySQL and MinIO
-themselves.
+`.env` holds Docker's values and is the only source of settings. It has two readers:
+- **Laravel**, inside the containers (they bind-mount the project, so they read it directly);
+- **Docker Compose**, on the host: the published ports (`${APP_PORT:-8000}`…), `MINIO_CONSOLE_URL`,
+  and its own `COMPOSE_FILE` / `COMPOSE_PROJECT_NAME`.
 
-| Setting | Value | Who uses it |
-|---|---|---|
-| `APP_URL` / `CENTRAL_DOMAIN` | `https://tenancey.test` / `tenancey.test` | URLs. `Tenant::url()` takes the scheme from `APP_URL` |
-| `SESSION_SECURE_COOKIE` | `true` | cookies only over https |
-| `DB_HOST` / `REDIS_HOST` / `MAIL_HOST` | `mysql` / `redis` / `mailpit` | PHP, inside Docker |
-| `REVERB_HOST` / `REVERB_PORT` | `reverb` / `8080` | PHP sending events, inside Docker |
-| `VITE_REVERB_HOST` / `_PORT` / `_SCHEME` | `ws.tenancey.test` / `443` / `https` | the browser, through Traefik. **Baked into the JS at build time** |
-| `MINIO_ENDPOINT` | `http://minio:9000` | PHP, inside Docker |
-| `MINIO_PUBLIC_ENDPOINT` | `https://s3.tenancey.test` | what download links are signed for |
+`compose.yaml` sets no Laravel settings, only what configures MySQL and MinIO themselves.
+
+| Setting | Port mode | docker-edge mode | Who uses it |
+|---|---|---|---|
+| `APP_URL` / `CENTRAL_DOMAIN` | `http://localhost:8000` / `localhost` | `https://tenancey.test` / `tenancey.test` | URLs. `Tenant::url()` takes the scheme and port from `APP_URL` |
+| `SESSION_SECURE_COOKIE` | `false` | `true` | cookies only over https |
+| `DB_HOST` / `REDIS_HOST` / `MAIL_HOST` | `mysql` / `redis` / `mailpit` | same | PHP, inside Docker |
+| `REVERB_HOST` / `REVERB_PORT` | `reverb` / `8080` | same | PHP sending events, inside Docker |
+| `VITE_REVERB_HOST` / `_PORT` / `_SCHEME` | `localhost` / `8080` / `http` | `ws.tenancey.test` / `443` / `https` | the browser. **Baked into the JS at build time** |
+| `MINIO_ENDPOINT` | `http://minio:9000` | same | PHP, inside Docker |
+| `MINIO_PUBLIC_ENDPOINT` | `http://localhost:9000` | `https://s3.tenancey.test` | what download links are signed for |
+| `COMPOSE_FILE` | unset | `compose.yaml:compose.edge.yaml` | Docker Compose |
 
 **Don't run `config:cache`, `route:cache` or `optimize` in development:** a cached config hides
 later `.env` changes. If it happens, `php artisan optimize:clear`.
@@ -117,17 +184,17 @@ builder. Rebuild after changing anything in `docker/php/`: `docker compose up -d
 
 ## Services
 
-| Service | Image | Role | Networks |
+| Service | Image | Role | Networks (docker-edge mode adds `edge`) |
 |---|---|---|---|
 | `app` | `tenancey-php:dev` | PHP-FPM (`app:9000`) | default |
 | `horizon` | `tenancey-php:dev` | `php artisan horizon` (queues) | default |
-| `reverb` | `tenancey-php:dev` | `php artisan reverb:start` (`reverb:8080`) | default, edge |
+| `reverb` | `tenancey-php:dev` | `php artisan reverb:start` (`reverb:8080`) | default (+ edge) |
 | `scheduler` | `tenancey-php:dev` | `php artisan schedule:work` | default |
-| `nginx` | `nginx:1.30-alpine` | static files, FastCGI to `app` | default, edge |
-| `mysql` | `mysql:8.4` | databases. The only published port: `127.0.0.1:3307` | default |
+| `nginx` | `nginx:1.30-alpine` | static files, FastCGI to `app` | default (+ edge) |
+| `mysql` | `mysql:8.4` | databases. Published on `127.0.0.1:3307` in both modes | default |
 | `redis` | `redis:7.4-alpine` | queues, cache, sessions | default |
-| `mailpit` | `axllent/mailpit:v1.29` | catches all mail (`mailpit:1025`) | default, edge |
-| `minio` | `cgr.dev/chainguard/minio@sha256:…` | tenant buckets (`minio:9000`, dashboard `:9001`) | default, edge |
+| `mailpit` | `axllent/mailpit:v1.29` | catches all mail (`mailpit:1025`) | default (+ edge) |
+| `minio` | `cgr.dev/chainguard/minio@sha256:…` | tenant buckets (`minio:9000`, dashboard `:9001`) | default (+ edge) |
 | `node` | `node:22.12-bookworm-slim` | one-off asset builds (profile `tools`) | default |
 
 ### MySQL and Redis
@@ -161,6 +228,9 @@ docker compose exec redis redis-cli ping
     Horizon ignores it.
   - `stop_grace_period: 660s` gives running jobs time to finish (the longest job timeout is
     600s).
+- `init: true` (all four PHP services) runs tini as PID 1, passing signals on to PHP. Without it
+  PHP is PID 1, and Linux drops a SIGTERM that arrives before PHP has installed its handler: a
+  stop right after a start then waited the whole 660s and ended in SIGKILL.
 - **After changing job code:** `docker compose restart horizon`. Long-running workers keep the old
   code in memory.
 - `scheduler` runs `schedule:work`, which starts `schedule:run` every minute (today: `model:prune`
@@ -171,7 +241,8 @@ docker compose exec redis redis-cli ping
 
 ```
 Laravel (app, horizon) ── reverb:8080 (inside Docker) ──────────────────▶ reverb :8080
-Browser ── wss://ws.tenancey.test ── Traefik (TLS ends) ── edge network ─▶ reverb :8080
+Browser, port mode ── ws://localhost:8080 (published port) ─────────────▶ reverb :8080
+Browser, edge mode ── wss://ws.tenancey.test ── Traefik (TLS ends) ─────▶ reverb :8080
 ```
 - `REVERB_HOST`/`REVERB_PORT` are for PHP, `VITE_REVERB_*` for the browser. After changing
   `VITE_REVERB_*`, rebuild the assets.
@@ -184,18 +255,21 @@ New tenants get a bucket on the `minio` container (`FILESYSTEM_DISK=minio`). Ten
 `local` keep folders under `storage/app/buckets/` and keep working.
 
 **One MinIO, two addresses.** PHP reaches MinIO as `http://minio:9000` (`MINIO_ENDPOINT`). The
-browser reaches it as `https://s3.tenancey.test` (`MINIO_PUBLIC_ENDPOINT`), through Traefik. A
-download link's signature covers the host, so links are signed for the public address
-(`App\Tenancy\Storage\PublicLinkS3Adapter`). Traefik passes the `Host` header on unchanged, so
-MinIO checks the signature against the same host.
+browser reaches it at `MINIO_PUBLIC_ENDPOINT`: `http://localhost:9000` (published port) or
+`https://s3.tenancey.test` (through Traefik). A download link's signature covers the host, so
+links are signed for the public address (`App\Tenancy\Storage\PublicLinkS3Adapter`). The browser's
+`Host` header reaches MinIO unchanged (Traefik passes it on), so MinIO checks the signature against
+the same host.
 
 - **Image:** `cgr.dev/chainguard/minio`, pinned by digest (Chainguard's free tier only has
   `:latest`). To upgrade: `docker buildx imagetools inspect cgr.dev/chainguard/minio:latest` and
   replace the digest.
-- **Dashboard:** `https://minio.tenancey.test` (`MINIO_BROWSER_REDIRECT_URL` tells it its public
-  address).
+- **Dashboard:** `http://localhost:9001` or `https://minio.tenancey.test`
+  (`MINIO_BROWSER_REDIRECT_URL` tells it its public address: `MINIO_CONSOLE_URL`, or the edge
+  override's value).
 - **No healthcheck:** the image is distroless (no shell). Check it from the Mac:
-  `curl -s -o /dev/null -w '%{http_code}\n' https://s3.tenancey.test/minio/health/live` → `200`.
+  `curl -s -o /dev/null -w '%{http_code}\n' http://localhost:9000/minio/health/live` (or
+  `https://s3.tenancey.test/…` in docker-edge mode) → `200`.
 - **Admin work** (e.g. deleting a bucket by hand): use `mc` from its own image on the project's
   network:
   `docker run --rm --network tenancey_default -e MC_HOST_dock=http://minioadmin:minioadmin@minio:9000 cgr.dev/chainguard/minio-client:latest ls dock`.
@@ -204,7 +278,7 @@ MinIO checks the signature against the same host.
 ### Mailpit
 
 Every mail the PHP services send goes to `mailpit:1025`. Nothing leaves your machine. Read the
-inbox at https://mail.tenancey.test.
+inbox at http://localhost:8025 (or https://mail.tenancey.test in docker-edge mode).
 
 ## Building assets (node)
 
@@ -241,7 +315,8 @@ docker compose exec app php artisan test --compact --group=minio   # against the
 ## Daily use
 
 ```bash
-cd ~/Sites/docker-edge && docker compose up -d  # only if docker-edge isn't running
+bin/setup                                       # fresh clone, or after pulling big changes (safe to re-run)
+cd ~/Sites/docker-edge && docker compose up -d  # docker-edge mode, if docker-edge isn't running
 docker compose up -d                            # start everything (Docker Desktop restarts it after a reboot anyway)
 docker compose ps                               # what's running
 docker compose logs -f <service>                # follow one service (Ctrl+C stops following)
@@ -271,15 +346,19 @@ docker compose run --rm node
 
 | Symptom | Cause and fix |
 |---|---|
-| `up` fails: "network edge declared as external, but could not be found" | docker-edge isn't running: `cd ~/Sites/docker-edge && docker compose up -d` |
-| Traefik's plain `404 page not found` | No router for that host. Look at http://127.0.0.2:18090: is the container up, labelled, on `edge`? |
+| "port is already allocated" / "address already in use" | Another program has that port. Change it in `.env`'s "Published ports" block, with the URL that uses it (see Two modes) |
+| `acme.localhost:8000` doesn't open | Safari can't resolve `*.localhost`: use Chrome or Firefox. `curl` works too |
+| After switching modes or ports, live updates stop | The JS still has the old Reverb address: `docker compose run --rm node` |
+| `up` fails: "network edge declared as external, but could not be found" | docker-edge mode without docker-edge running: `cd ~/Sites/docker-edge && docker compose up -d`. Or, for port mode, remove `COMPOSE_FILE` from `.env` |
+| `docker compose stop`/`restart` takes minutes, then the container exits 137 | `init: true` is missing from the PHP services (see Horizon): PHP as PID 1 ignored SIGTERM |
+| (edge) Traefik's plain `404 page not found` | No router for that host. Look at http://127.0.0.2:18090: is the container up, labelled, on `edge`? |
 | `502 Bad Gateway` | The container behind it isn't answering: `docker compose ps`, then its logs |
 | Browser certificate warning | `mkcert -install` again. Does `~/Sites/docker-edge/dynamic/tls.yaml` list the certificate? |
 | `tenancey.test` goes to Valet or nowhere | `dig +short tenancey.test @127.0.0.1` must say `127.0.0.2`. Check the dnsmasq file and flush the cache: `sudo dscacheutil -flushcache; sudo killall -HUP mDNSResponder` |
 | Nothing answers on `127.0.0.2` | The forwarders: `sudo launchctl print system/local.edge-forward-443`, `/var/log/local.edge-forward-443.log`, and `ifconfig lo0` (is `127.0.0.2` there?) |
 | Links or redirects come out as `http://` | `trustProxies` missing from `bootstrap/app.php`, or the request didn't come through Traefik |
-| Images: `SignatureDoesNotMatch` | Links must be signed for `MINIO_PUBLIC_ENDPOINT=https://s3.tenancey.test`. After changing it: `docker compose restart horizon` |
-| Live progress doesn't update | DevTools → Network → WS should show `wss://ws.tenancey.test` with `101`. If it tries another address: fix `VITE_REVERB_*` in `.env`, then `docker compose run --rm node npm run dev`. Is `reverb` up? |
+| Images: `SignatureDoesNotMatch` | Links must be signed for the address the browser uses (`MINIO_PUBLIC_ENDPOINT`). After changing it: `docker compose restart horizon` |
+| Live progress doesn't update | DevTools → Network → WS should show `ws://localhost:8080` (or `wss://ws.tenancey.test`) with `101`. If it tries another address: fix `VITE_REVERB_*` in `.env`, then `docker compose run --rm node npm run dev`. Is `reverb` up? |
 | "Vite manifest not found" | Assets aren't built: `docker compose run --rm node` |
 | Pages load assets from `localhost:517x` | A stale `public/hot` file: delete it |
 | A tenant stays in "Provisioning" | `docker compose ps`: is `horizon` up? `docker compose logs horizon` |

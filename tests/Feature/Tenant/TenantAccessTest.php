@@ -29,6 +29,19 @@ class TenantAccessTest extends TestCase
         $this->get($this->centralUrl('/dashboard'))->assertNotFound();
     }
 
+    /**
+     * Port mode (compose.yaml without docker-edge): the central domain is `localhost` and the
+     * address carries a port. The tenant is still found from the host's first label.
+     */
+    public function test_a_tenant_answers_on_a_localhost_subdomain_with_a_port(): void
+    {
+        $this->createTenant('acme');
+        tenancy()->end();
+        config(['app.url' => 'http://localhost:8000', 'tenancy.central_domains' => ['localhost']]);
+
+        $this->get('http://acme.localhost:8000/login')->assertOk()->assertSee('Sign in to Acme Ltd');
+    }
+
     public function test_the_door_follows_enabled_and_state(): void
     {
         $tenant = $this->createTenant('acme');

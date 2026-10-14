@@ -1,0 +1,66 @@
+# docker-edge mode: HTTPS on tenancey.test through the shared Traefik proxy (~/Sites/docker-edge,
+# start it first). Turned on by COMPOSE_FILE=compose.yaml:compose.edge.yaml in .env; it then
+# applies to every `docker compose` command. Guide: docs/DOCKER.md ("Two modes").
+#
+# It adds the Traefik labels and the edge network, and removes compose.yaml's published ports
+# (`!reset`), so nothing else on this machine is taken (another project may hold 8080). MySQL
+# keeps its 127.0.0.1 port.
+
+services:
+  reverb:
+    networks: [default, edge] # the browser: wss://ws.tenancey.test → Traefik; PHP containers: reverb:8080
+    ports: !reset []
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: edge
+      traefik.http.routers.tenancey-ws.rule: Host(`ws.tenancey.test`)
+      traefik.http.routers.tenancey-ws.entrypoints: websecure
+      traefik.http.routers.tenancey-ws.priority: "100"
+      traefik.http.services.tenancey-ws.loadbalancer.server.port: "8080"
+
+  nginx:
+    networks: [default, edge]
+    ports: !reset []
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: edge
+      # The central domain and every tenant. Priority 1, so the named side services win
+      # (Traefik's default priority is the rule's length, and this rule is the longest).
+      traefik.http.routers.tenancey.rule: 'Host(`tenancey.test`) || HostRegexp(`^[a-z0-9-]+\.tenancey\.test$$`)'
+      traefik.http.routers.tenancey.entrypoints: websecure
+      traefik.http.routers.tenancey.priority: "1"
+      traefik.http.services.tenancey.loadbalancer.server.port: "80"
+
+  mailpit:
+    networks: [default, edge] # inbox: https://mail.tenancey.test
+    ports: !reset []
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: edge
+      traefik.http.routers.tenancey-mail.rule: Host(`mail.tenancey.test`)
+      traefik.http.routers.tenancey-mail.entrypoints: websecure
+      traefik.http.routers.tenancey-mail.priority: "100"
+      traefik.http.services.tenancey-mail.loadbalancer.server.port: "8025"
+
+  minio:
+    environment:
+      MINIO_BROWSER_REDIRECT_URL: https://minio.tenancey.test
+    networks: [default, edge] # S3 API: https://s3.tenancey.test   dashboard: https://minio.tenancey.test
+    ports: !reset []
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: edge
+      traefik.http.routers.tenancey-s3.rule: Host(`s3.tenancey.test`)
+      traefik.http.routers.tenancey-s3.entrypoints: websecure
+      traefik.http.routers.tenancey-s3.priority: "100"
+      traefik.http.routers.tenancey-s3.service: tenancey-s3
+      traefik.http.services.tenancey-s3.loadbalancer.server.port: "9000"
+      traefik.http.routers.tenancey-minio.rule: Host(`minio.tenancey.test`)
+      traefik.http.routers.tenancey-minio.entrypoints: websecure
+      traefik.http.routers.tenancey-minio.priority: "100"
+      traefik.http.routers.tenancey-minio.service: tenancey-minio
+      traefik.http.services.tenancey-minio.loadbalancer.server.port: "9001"
+
+networks:
+  edge:
+    external: true # created by ~/Sites/docker-edge

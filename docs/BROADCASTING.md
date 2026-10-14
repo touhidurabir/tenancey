@@ -8,7 +8,7 @@ hosts, see [ROUTING.md](ROUTING.md).
 
 | Piece | What it is | Where |
 |---|---|---|
-| **Reverb** | A WebSocket server. It holds the browsers' open connections and forwards messages to them | The `reverb` Compose service, `reverb:8080` inside Docker, `wss://ws.tenancey.test` from the browser |
+| **Reverb** | A WebSocket server. It holds the browsers' open connections and forwards messages to them | The `reverb` Compose service, `reverb:8080` inside Docker; from the browser `ws://localhost:8080` (port mode) or `wss://ws.tenancey.test` (docker-edge mode) |
 | **Broadcaster** | Laravel's side: sends events to Reverb over HTTP | `BROADCAST_CONNECTION=reverb`, `config/broadcasting.php` |
 | **Echo** | The browser's side: opens the WebSocket and subscribes to channels | `resources/js/echo.js` (laravel-echo + pusher-js) |
 | **Channel** | A named stream. Private channels (`private-…`) need Laravel's permission to join | `routes/channels.php` |
@@ -25,8 +25,12 @@ hosts, see [ROUTING.md](ROUTING.md).
 In Docker the three differ:
 - Reverb binds `0.0.0.0:8080` inside its container.
 - Laravel sends to `reverb:8080`, the service name, over plain http inside Docker.
-- The browser connects to `wss://ws.tenancey.test:443`. Traefik terminates TLS and passes the
-  WebSocket on to `reverb:8080` over the `edge` network.
+- The browser connects to `VITE_REVERB_*`, baked into the JS:
+  - port mode: `ws://localhost:8080`, the published port, straight to `reverb:8080`;
+  - docker-edge mode: `wss://ws.tenancey.test:443`. Traefik terminates TLS and passes the
+    WebSocket on to `reverb:8080` over the `edge` network.
+- The walkthrough below uses docker-edge mode's addresses; in port mode read `ws://localhost:8080`
+  and `http://localhost:8000`.
 
 Production looks the same with a real domain (e.g. `wss://ws.example.com`).
 
@@ -341,7 +345,7 @@ Steps 1–3 happen once per page and channel. Steps 4–7 happen on every releva
   (`docker compose run --rm node npm run dev`).
 - **Nothing updating?** The status line on the tenant page shows the WebSocket state:
   - `unavailable`: the browser can't reach Reverb. Check `docker compose ps reverb`,
-    `docker compose logs reverb`, and DevTools → Network → WS (`wss://ws.tenancey.test`, status 101).
+    `docker compose logs reverb`, and DevTools → Network → WS (`ws://localhost:8080` or `wss://ws.tenancey.test`, status 101).
     A Traefik 404 there means the `tenancey-ws` router is missing.
   - `not authorized for this channel`: `/broadcasting/auth` returned 403. Are you signed in as
     a central admin?
@@ -356,7 +360,7 @@ Steps 1–3 happen once per page and channel. Steps 4–7 happen on every releva
 | What | Where |
 |---|---|
 | Reverb server and app keys | `.env` `REVERB_*`, `config/reverb.php` |
-| Reverb process | the `reverb` service in `compose.yaml` (labels route `ws.tenancey.test` to it) |
+| Reverb process | the `reverb` service in `compose.yaml` (port 8080 published; in docker-edge mode `compose.edge.yaml`'s labels route `ws.tenancey.test` to it) |
 | Broadcaster (where Laravel sends) | `.env` `BROADCAST_CONNECTION`, `config/broadcasting.php` |
 | `/broadcasting/auth` route | `bootstrap/app.php` → `withRouting(channels: …)` |
 | Who may join which channel | `routes/channels.php` |

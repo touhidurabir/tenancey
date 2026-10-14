@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# One-command setup for a fresh clone (and safe to run again): .env, containers, PHP packages,
+# keys, database, assets. Needs only Docker (Compose v2) and bash. Guide: docs/DOCKER.md.
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+step=""
+trap 'echo; echo "bin/setup stopped at: $step" >&2' ERR
+
+say() {
+    step="$1"
+    echo
+    echo "==> $1"
+}
+
+# The value of KEY in .env (empty if unset).
+env_value() {
+    { grep -E "^$1=" .env || true; } | tail -n 1 | cut -d= -f2- | sed -e 's/^"//' -e 's/"$//'
+}
+
+# Set KEY in .env, only when it is present and empty.
+fill_if_empty() {
+    if grep -qE "^$1=$" .env; then
+        sed -i.bak "s|^$1=\$|$1=$2|" .env && rm -f .env.bak
+        echo "$1 set"
+    fi
+}
+
+say "1/9 Checking Docker"
+if ! docker compose version > /dev/null 2>&1; then
+    echo "Docker with Compose v2 is required (https://docs.docker.com/get-docker/)." >&2
+    exit 1
+fi
+
+say "2/9 Making .env"
+if [ -f .env ]; then
+    echo ".env exists, kept as it is"
+else
+    cp .env.example .env
+    echo ".env created from .env.example"
+fi
+
+say "3/9 Starting MySQL, Redis, MinIO, Mailpit, PHP and nginx"
+docker compose up -d --wait mysql redis minio mailpit app nginx
+
+say "4/9 Installing PHP packages"
+docker compose exec -T app composer install --no-interaction
+
+say "5/9 Filling empty keys"
+if grep -qE '^APP_KEY=$' .env; then
+    docker compose exec -T app php artisan key:generate --no-interaction
+fi
+fill_if_empty REVERB_APP_ID "$(docker compose exec -T app php -r 'echo random_int(100000, 999999);')"
+fill_if_empty REVERB_APP_KEY "$(docker compose exec -T app php -r 'echo bin2hex(random_bytes(16));')"
+fill_if_empty REVERB_APP_SECRET "$(docker compose exec -T app php -r 'echo bin2hex(random_bytes(32));')"
+
+say "6/9 Migrating and seeding the central database"
+docker compose exec -T app php artisan migrate --force --seed --no-interaction
+
+say "7/9 Building assets"
+docker compose run --rm -T node
+
+say "8/9 Starting Horizon, Reverb and the scheduler"
+docker compose up -d
+docker compose restart horizon reverb
+
+say "9/9 Done"
+cat <<EOF
+
+  App:      $(env_value APP_URL)   (admin@tenancey.test / password)
+  Mail:     http://localhost:$(env_value FORWARD_MAILPIT_DASHBOARD_PORT)
+  MinIO:    $(env_value MINIO_CONSOLE_URL)   (minioadmin / minioadmin)
+
+  Tenants live at {subdomain}.$(env_value CENTRAL_DOMAIN). On *.localhost use Chrome or Firefox:
+  Safari can't resolve those names. In docker-edge mode the addresses are in docs/DOCKER.md.
+EOF

@@ -34,16 +34,21 @@ Read the matching doc before changing routes, middleware, queue config, Horizon 
 
 ## Environment
 
-Docker only (`compose.yaml`, guide in `docs/DOCKER.md`), behind the shared Traefik proxy in
-`~/Sites/docker-edge` (HTTPS on `127.0.0.2`, its own README). Valet no longer serves this app.
+Docker only (guide in `docs/DOCKER.md`, section "Two modes"). Valet no longer serves this app.
+- **Port mode is the default** (`compose.yaml` alone): `http://localhost:8000`, tenants at
+  `http://{subdomain}.localhost:8000`, side services on published ports (Reverb 8080, MinIO
+  9000/9001, Mailpit 8025). A fresh clone is set up with `bin/setup` (safe to re-run).
+- **This Mac runs docker-edge mode**: `COMPOSE_FILE=compose.yaml:compose.edge.yaml` in `.env` adds
+  the Traefik labels and the `edge` network and removes the published ports. It needs the shared
+  Traefik proxy in `~/Sites/docker-edge` (HTTPS on `127.0.0.2`, its own README). Addresses below.
 - **https://tenancey.test/** (`APP_URL`), tenants at `https://{subdomain}.tenancey.test`. Side services:
   `wss://ws.tenancey.test` (Reverb), `https://s3.tenancey.test` (MinIO API, what links are signed for),
   `https://minio.tenancey.test` (MinIO dashboard), `https://mail.tenancey.test` (Mailpit). Those four
   names are reserved subdomains.
 - **Run artisan, composer and tests inside the container:** `docker compose exec app php artisan …`.
   The Mac's PHP can't reach `mysql`/`redis`/`minio` by name.
-- `.env` holds Docker's values and is the only source of settings (`compose.yaml` sets none for
-  Laravel). Laravel trusts the proxy's `X-Forwarded-*` headers (`trustProxies` in `bootstrap/app.php`).
+- `.env` holds Docker's values and is the only source of settings, the published ports included
+  (`compose.yaml` sets none for Laravel; Compose itself reads `COMPOSE_FILE` and the ports from it). Laravel trusts the proxy's `X-Forwarded-*` headers (`trustProxies` in `bootstrap/app.php`).
 - MySQL: container `mysql`, from the Mac at `127.0.0.1:3307`, user `root`, password `docker`. The central
   (landlord) DB is **`tenancey`**. This project's tenant databases are `tenancey_{uuid}`
   (`TENANT_DATABASE_PREFIX`). Never drop databases or users by pattern.
@@ -186,7 +191,8 @@ Docker only (`compose.yaml`, guide in `docs/DOCKER.md`), behind the shared Traef
 ## Commands
 
 ```bash
-docker compose up -d                                   # start (docker-edge must be up: ~/Sites/docker-edge)
+bin/setup                                              # fresh clone: .env, containers, keys, DB, assets (safe to re-run)
+docker compose up -d                                   # start (edge mode on this Mac: docker-edge must be up)
 docker compose ps                                      # Horizon is REQUIRED for provisioning; dashboard: /horizon
 docker compose restart horizon                         # after changing job code
 docker compose restart reverb                          # after changing REVERB_* settings or Reverb-related code
