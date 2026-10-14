@@ -21,6 +21,13 @@ class TenantUrlTest extends TestCase
         $this->assertSame('http://acme.tenancey.localhost:8000/login', $this->acme()->url('/login'));
     }
 
+    public function test_url_on_the_bare_localhost_central_domain(): void
+    {
+        config(['app.url' => 'http://localhost:8000', 'tenancy.central_domains' => ['localhost']]);
+
+        $this->assertSame('http://acme.localhost:8000/login', $this->acme()->url('/login'));
+    }
+
     public function test_url_keeps_the_scheme_and_handles_paths(): void
     {
         config(['app.url' => 'https://tenancey.localhost:8443/', 'tenancy.central_domains' => ['tenancey.localhost']]);

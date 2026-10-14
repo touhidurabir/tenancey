@@ -13,9 +13,10 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        // Traefik (docker-edge) ends HTTPS and forwards http with X-Forwarded-Proto/Host/Port.
-        // Only Traefik can reach nginx, so trusting any proxy is safe locally; production lists
-        // its proxy's address instead.
+        // Behind docker-edge (compose.edge.yaml), Traefik ends HTTPS and forwards http with
+        // X-Forwarded-Proto/Host/Port. In port mode there is no proxy and the headers are absent.
+        // nginx is reachable only through Traefik or on 127.0.0.1, so trusting any proxy is fine
+        // for development; production lists its proxy's address instead.
         $middleware->trustProxies(at: '*');
 
         // Guests and signed-in users are redirected within their own world: tenant routes run
